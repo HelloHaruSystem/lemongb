@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const CpuState = struct {
     a: u8,
     f: u8,
@@ -9,5 +11,4 @@ pub const CpuState = struct {
     l: u8,
     sp: u16,
     pc: u16,
-    pcmem: [4]u8,
 };
