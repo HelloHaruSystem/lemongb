@@ -34,7 +34,11 @@ pub const Cpu = struct {
     // IME: interupt master enable flag
     ime: bool,
 
-    pub fn init() Cpu {}
+    pub fn init() Cpu {
+        var cpu = Cpu{ .registers = undefined, .ime = false };
+        cpu.resetRegisters();
+        return cpu;
+    }
 
     fn resetRegisters(self: *Cpu) void {
         // TODO: initial value for the f register depends on the checksum for now it is hardcodedas the non-zero checksum fix this when cartridge is implemented
