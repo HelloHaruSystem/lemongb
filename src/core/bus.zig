@@ -14,6 +14,12 @@ pub const Bus = struct {
     // 0xFFFF:          Interrupt Enable Register (IE)
     memory: [0xFFFF + 1]u8,
 
+    pub fn init() Bus {
+        return Bus{
+            .memory = [_]u8{0} ** (0xFFFF + 1),
+        };
+    }
+
     pub fn read(self: *Bus, address: u16) u8 {
         // for now just return the data at the location
         // in the future handle the regions differently
