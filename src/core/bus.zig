@@ -24,12 +24,23 @@ pub const Bus = struct {
             0xA000...0xBFFF => return self.memory[address],
             0xC000...0xCFFF => return self.memory[address],
             0xD000...0xDFFF => return self.memory[address],
-            0xE000...0xFDFF => return self.memory[address],
+            0xE000...0xFDFF => return self.memory[address - 0x2000], // echo address subtracting 0x2000 maps it to the corresponding work ram adress
             0xFE00...0xFE9F => return self.memory[address],
-            0xFEA0...0xFEFF => return self.memory[address],
+            0xFEA0...0xFEFF => return 0xFF, // not usable region just returns 0xFF for now
             0xFF00...0xFF7F => return self.memory[address],
             0xFF80...0xFFFE => return self.memory[address],
             0xFFFF => return self.memory[address],
+        }
+    }
+
+    pub fn write(self: *Bus, address: u16, value: u8) void {
+        // simple for now
+        // rom bank 00 and bank 01 is read only
+        switch (address) {
+            0x0000...0x7FFF => {}, // rom bank 00 and bank 01 is read only
+            0xE000...0xFDFF => self.memory[address - 0x2000] = value, // echo address mirrors work ram so we write to the corresponding work ram address
+            0xFEA0...0xFEFF => {}, // not usable region undefined/weird behavior on real hardware
+            else => self.memory[address] = value,
         }
     }
 };
