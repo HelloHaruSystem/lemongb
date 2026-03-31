@@ -41,7 +41,7 @@ pub const Cpu = struct {
     }
 
     fn resetRegisters(self: *Cpu) void {
-        // TODO: initial value for the f register depends on the checksum for now it is hardcodedas the non-zero checksum fix this when cartridge is implemented
+        // TODO: initial value for the f register depends on the checksum for now it is hardcoded as the non-zero checksum fix this when cartridge is implemented
         self.registers.af.value = 0x01B0;
         self.registers.bc.value = 0x0013;
         self.registers.de.value = 0x00D8;
