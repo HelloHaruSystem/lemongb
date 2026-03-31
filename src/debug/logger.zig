@@ -14,6 +14,7 @@ pub const Logger = struct {
 
         const log_level = levelToString(level);
         try writer.print("[{s}] {s}\n", .{ log_level, message });
+        try writer.flush();
     }
 };
 
