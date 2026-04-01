@@ -71,6 +71,75 @@ pub const Cpu = struct {
             else => CpuError.UnknownOpcode,
         };
     }
+
+    // Flag z
+    fn getZeroFlag(self: *Cpu) bool {
+        return (self.registers.af.parts.f & (1 << 7)) != 0;
+    }
+
+    // Flag n
+    fn getSubtractionFlag(self: *Cpu) bool {
+        return (self.registers.af.parts.f & (1 << 6)) != 0;
+    }
+
+    // Flag h
+    fn getHalfCarryFlag(self: *Cpu) bool {
+        return (self.registers.af.parts.f & (1 << 5)) != 0;
+    }
+
+    // Flag c
+    fn getCarryFlag(self: *Cpu) bool {
+        return (self.registers.af.parts.f & (1 << 4)) != 0;
+    }
+
+    // Flag z
+    fn setZeroFlag(self: *Cpu, value: bool) void {
+        if (value) {
+            self.registers.af.parts.f |= (1 << 7);
+        } else {
+            self.registers.af.parts.f &= ~(1 << 7);
+        }
+    }
+
+    // Flag n
+    fn setSubtractionFlag(self: *Cpu, value: bool) void {
+        if (value) {
+            self.registers.af.parts.f |= (1 << 6);
+        } else {
+            self.registers.af.parts.f &= ~(1 << 6);
+        }
+    }
+
+    // Flag h
+    fn setHalfCarryFlag(self: *Cpu, value: bool) void {
+        if (value) {
+            self.registers.af.parts.f |= (1 << 5);
+        } else {
+            self.registers.af.parts.f &= ~(1 << 5);
+        }
+    }
+
+    // Flag c
+    fn setCarryFlag(self: *Cpu, value: bool) void {
+        if (value) {
+            self.registers.af.parts.f |= (1 << 4);
+        } else {
+            self.registers.af.parts.f &= ~(1 << 4);
+        }
+    }
+
+    // Cpu State is used for gameboy doctor
+    pub fn toCpuState(self: *Cpu, bus: *Bus) CpuState {
+        return CpuState{
+            .registers = self.registers,
+            .pcmem = .{
+                bus.read(self.registers.pc),
+                bus.read(self.registers.pc +% 1),
+                bus.read(self.registers.pc +% 2),
+                bus.read(self.registers.pc +% 3),
+            },
+        };
+    }
 };
 
 pub const CpuState = struct {
