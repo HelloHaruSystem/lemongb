@@ -1,5 +1,9 @@
 const Bus = @import("bus.zig").Bus;
 
+pub const CpuError = error{
+    UnknownOpcode,
+};
+
 const AF = packed union {
     value: u16,
     parts: packed struct { f: u8, a: u8 },
@@ -52,7 +56,7 @@ pub const Cpu = struct {
         self.registers.pc = 0x0100;
     }
 
-    pub fn step(self: *Cpu, bus: *Bus) u8 {
+    pub fn step(self: *Cpu, bus: *Bus) !u8 {
         // read the byte at program counter from the bus
         const opcode = bus.read(self.registers.pc);
         // increment program counter
@@ -64,7 +68,7 @@ pub const Cpu = struct {
         return switch (opcode) {
             0x00 => 4, // nop/no operation
 
-            else => unreachable,
+            else => CpuError.UnknownOpcode,
         };
     }
 };

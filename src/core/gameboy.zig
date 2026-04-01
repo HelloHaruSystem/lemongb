@@ -18,4 +18,8 @@ pub const Gameboy = struct {
     pub fn loadCartridge(self: *Gameboy, cartridge: *const Cartridge) void {
         self.bus.loadCartridge(cartridge);
     }
+
+    pub fn step(self: *Gameboy) !void {
+        self.cycles += try self.cpu.step(&self.bus);
+    }
 };
