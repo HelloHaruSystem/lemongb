@@ -1,3 +1,5 @@
+const Bus = @import("bus.zig").Bus;
+
 const AF = packed union {
     value: u16,
     parts: packed struct { f: u8, a: u8 },
@@ -48,6 +50,22 @@ pub const Cpu = struct {
         self.registers.hl.value = 0x014D;
         self.registers.sp = 0xFFFE;
         self.registers.pc = 0x0100;
+    }
+
+    pub fn step(self: *Cpu, bus: *Bus) u8 {
+        // read the byte at program counter from the bus
+        const opcode = bus.read(self.registers.pc);
+        // increment program counter
+        // make sure that it wraps around if needed
+        self.registers.pc +%= 1;
+
+        // switch case for opcode decoing for now
+        // considering refactoring to something like table[0x0000] in the future
+        return switch (opcode) {
+            0x00 => 4, // nop/no operation
+
+            else => unreachable,
+        };
     }
 };
 
