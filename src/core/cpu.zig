@@ -57,11 +57,7 @@ pub const Cpu = struct {
     }
 
     pub fn step(self: *Cpu, bus: *Bus) !u8 {
-        // read the byte at program counter from the bus
-        const opcode = bus.read(self.registers.pc);
-        // increment program counter
-        // make sure that it wraps around if needed
-        self.registers.pc +%= 1;
+        const opcode = self.fetch(bus);
 
         // switch case for opcode decoing for now
         // considering refactoring to something like table[0x0000] in the future
@@ -70,6 +66,23 @@ pub const Cpu = struct {
 
             else => CpuError.UnknownOpcode,
         };
+    }
+
+    fn fetch(self: *Cpu, bus: *Bus) u8 {
+        // read the byte at program counter from the bus
+        const fetched = bus.read(self.registers.pc);
+        // increment program counter
+        // make sure that it wraps around if needed
+        self.registers.pc +%= 1;
+        return fetched;
+    }
+
+    fn readU16(bus: *Bus, address: u16) u16 {
+        const low = bus.read(address);
+        const high = bus.read(address +% 1);
+
+        //Little-endian — least significant byte (low byte) comes first in memory
+        return (@as(u16, high) << 8) | @as(u16, low);
     }
 
     // Flag z
