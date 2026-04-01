@@ -33,6 +33,11 @@ pub fn main() !void {
 
         gameboy.loadCartridge(&cartridge);
         try logger.log(stdout, .debug, "Cartridge has been loaded");
+
+        // Main Loop
+        while (true) {
+            try gameboy.step();
+        }
     } else {
         try stdout.print("Please provide a rom path as the first argument\n", .{});
         try stdout.flush();
