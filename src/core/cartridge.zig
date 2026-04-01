@@ -6,6 +6,7 @@ const max_rom_size = 8 * 1024 * 1024;
 pub const CartridgeError = error{
     RomTooSmall,
     InvalidHeader,
+    UnsupportedCartridgeType, // used while the emulater is still under developing
 };
 
 pub const Cartridge = struct {
@@ -19,6 +20,10 @@ pub const Cartridge = struct {
         if (rom_contents.len < 0x0150) return CartridgeError.RomTooSmall;
 
         const cartridge_type = rom_contents[0x0147];
+
+        // check if the rom type is supported
+        // rom only supported for now (0x00)
+        if (cartridge_type != 0x00) return CartridgeError.UnsupportedCartridgeType;
 
         return Cartridge{
             .rom_data = rom_contents,
