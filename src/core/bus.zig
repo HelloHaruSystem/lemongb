@@ -1,3 +1,5 @@
+const Cartridge = @import("cartridge.zig").Cartridge;
+
 pub const Bus = struct {
     // 65,536 / 64 KB
     // 0x0000 - 0x3FFF: ROM Bank 00 (16 KiB)
@@ -48,5 +50,14 @@ pub const Bus = struct {
             0xFEA0...0xFEFF => {}, // not usable region undefined/weird behavior on real hardware
             else => self.memory[address] = value,
         }
+    }
+
+    // very simple as of now since the only supported catridges are rom only
+    // therefor it only loads into bank 00 and bank 01
+    pub fn loadCartridge(self: *Bus, cartridge: *const Cartridge) void {
+        // load into bank 00 0x0000-0x3FFF
+        @memcpy(self.memory[0x0000..0x4000], cartridge.rom_data[0x0000..0x4000]);
+        // load into bank 01 0x4000-0x7FFF
+        @memcpy(self.memory[0x4000..0x8000], cartridge.rom_data[0x4000..0x8000]);
     }
 };
