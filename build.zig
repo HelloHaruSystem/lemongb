@@ -28,22 +28,26 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    // // tests for library
-    // const lib_tests = b.addTest(.{
-    //     .root_module = test_module,
-    // });
+    // tests
+    const cpu_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/core/cpu_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
 
-    // tsts for the executable
+    // test for the executable
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
     });
 
-    // const run_lib_tests = b.addRunArtifact(lib_tests);
+    const run_cpu_tests = b.addRunArtifact(cpu_tests);
 
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
     // test step
     const test_step = b.step("test", "Run tests");
-    // test_step.dependOn(&run_lib_tests.step);
+    test_step.dependOn(&run_cpu_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 }
