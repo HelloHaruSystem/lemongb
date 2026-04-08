@@ -168,7 +168,7 @@ pub const Cpu = struct {
         if (value) {
             self.registers.af.parts.f |= (1 << 7);
         } else {
-            self.registers.af.parts.f &= ~(1 << 7);
+            self.registers.af.parts.f &= ~@as(u8, (1 << 7));
         }
     }
 
@@ -177,7 +177,7 @@ pub const Cpu = struct {
         if (value) {
             self.registers.af.parts.f |= (1 << 6);
         } else {
-            self.registers.af.parts.f &= ~(1 << 6);
+            self.registers.af.parts.f &= ~@as(u8, (1 << 6));
         }
     }
 
@@ -186,7 +186,7 @@ pub const Cpu = struct {
         if (value) {
             self.registers.af.parts.f |= (1 << 5);
         } else {
-            self.registers.af.parts.f &= ~(1 << 5);
+            self.registers.af.parts.f &= ~@as(u8, (1 << 5));
         }
     }
 
@@ -195,7 +195,7 @@ pub const Cpu = struct {
         if (value) {
             self.registers.af.parts.f |= (1 << 4);
         } else {
-            self.registers.af.parts.f &= ~(1 << 4);
+            self.registers.af.parts.f &= ~@as(u8, (1 << 4));
         }
     }
 
