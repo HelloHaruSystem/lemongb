@@ -92,6 +92,15 @@ pub const Cpu = struct {
                 self.rotateLeft(&self.registers.af.parts.a);
                 return 4;
             },
+            0x08 => { // LD (u16), SP
+                const low = self.fetch(bus);
+                const high = self.fetch(bus);
+                const address = (@as(u16, high) << 8) | @as(u16, low);
+
+                bus.write(address, @truncate(self.registers.sp));
+                bus.write(address +% 1, @truncate(self.registers.sp >> 8));
+                return 20;
+            },
 
             else => CpuError.UnknownOpcode,
         };
