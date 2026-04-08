@@ -101,6 +101,34 @@ pub const Cpu = struct {
                 bus.write(address +% 1, @truncate(self.registers.sp >> 8));
                 return 20;
             },
+            0x09 => { // ADD HL,BC
+                self.addHL(self.registers.bc.value);
+                return 8;
+            },
+            0x0A => { // LD A, (BC)
+                self.registers.af.parts.a = bus.read(self.registers.bc.value);
+                return 8;
+            },
+            0x0B => { // DEC BC
+                self.registers.bc.value -%= 1;
+                return 8;
+            },
+            0x0C => { // INC C
+                self.incrementRegister(&self.registers.bc.parts.c);
+                return 4;
+            },
+            0x0D => { // DEC C
+                self.decrementRegister(&self.registers.bc.parts.c);
+                return 4;
+            },
+            0x0E => { // LD C,u8
+                self.registers.bc.parts.c = self.fetch(bus);
+                return 8;
+            },
+            0x0F => { // RRCA
+                self.rotateRight(&self.registers.af.parts.a);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
@@ -169,6 +197,26 @@ pub const Cpu = struct {
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag(false);
         self.setCarryFlag(old_bit_seven != 0);
+    }
+
+    fn rotateRight(self: *Cpu, register: *u8) void {
+        const old_bit_zero = register.* & 1;
+        register.* = register.* >> 1;
+        register.* |= (old_bit_zero << 7);
+
+        self.setZeroFlag(false);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag(false);
+        self.setCarryFlag(old_bit_zero != 0);
+    }
+
+    fn addHL(self: *Cpu, value: u16) void {
+        const original_value = self.registers.hl.value;
+        self.registers.hl.value +%= value;
+
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag((original_value & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
+        self.setCarryFlag(@as(u32, original_value) + @as(u32, value) > 0xFFFF);
     }
 
     // Flag z
