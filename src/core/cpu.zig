@@ -63,6 +63,27 @@ pub const Cpu = struct {
         // considering refactoring to something like table[0x0000] in the future
         return switch (opcode) {
             0x00 => 4, // nop/no operation
+            0x01 => {
+                self.registers.bc.parts.c = self.fetch(bus);
+                self.registers.bc.parts.b = self.fetch(bus);
+                return 12;
+            },
+            0x02 => {
+                bus.write(self.registers.bc.value, self.registers.af.parts.a);
+                return 8;
+            },
+            0x03 => {
+                self.registers.bc.value +%= 1;
+                return 8;
+            },
+            0x04 => {
+                self.incrementRegister(&self.registers.bc.parts.b);
+                return 4;
+            },
+            0x05 => {
+                self.decrementRegister(&self.registers.bc.parts.b);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
@@ -102,6 +123,24 @@ pub const Cpu = struct {
         self.registers.sp +%= 1;
 
         return (@as(u16, high) << 8) | @as(u16, low);
+    }
+
+    fn incrementRegister(self: *Cpu, register: *u8) void {
+        const original_value = register.*;
+        register.* +%= 1;
+
+        self.setZeroFlag(register.* == 0);
+        self.setSubtractionFlag(true);
+        self.setHalfCarryFlag((original_value & 0x0F) == 0x0F);
+    }
+
+    fn decrementRegister(self: *Cpu, register: *u8) void {
+        const original_value = register.*;
+        register.* -%= 1;
+
+        self.setZeroFlag(register.* == 0);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag((original_value & 0x0F) == 0x00);
     }
 
     // Flag z
