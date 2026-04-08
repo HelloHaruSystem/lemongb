@@ -63,25 +63,33 @@ pub const Cpu = struct {
         // considering refactoring to something like table[0x0000] in the future
         return switch (opcode) {
             0x00 => 4, // nop/no operation
-            0x01 => {
+            0x01 => { // LD BC, u16
                 self.registers.bc.parts.c = self.fetch(bus);
                 self.registers.bc.parts.b = self.fetch(bus);
                 return 12;
             },
-            0x02 => {
+            0x02 => { // LD (BC), A
                 bus.write(self.registers.bc.value, self.registers.af.parts.a);
                 return 8;
             },
-            0x03 => {
+            0x03 => { // INC BC
                 self.registers.bc.value +%= 1;
                 return 8;
             },
-            0x04 => {
+            0x04 => { // INC B
                 self.incrementRegister(&self.registers.bc.parts.b);
                 return 4;
             },
-            0x05 => {
+            0x05 => { // DEC B
                 self.decrementRegister(&self.registers.bc.parts.b);
+                return 4;
+            },
+            0x06 => { // LD B, u8
+                self.registers.bc.parts.b = self.fetch(bus);
+                return 8;
+            },
+            0x07 => { // RLCA
+                self.rotateLeft(&self.registers.af.parts.a);
                 return 4;
             },
 
@@ -130,7 +138,7 @@ pub const Cpu = struct {
         register.* +%= 1;
 
         self.setZeroFlag(register.* == 0);
-        self.setSubtractionFlag(true);
+        self.setSubtractionFlag(false);
         self.setHalfCarryFlag((original_value & 0x0F) == 0x0F);
     }
 
@@ -139,8 +147,19 @@ pub const Cpu = struct {
         register.* -%= 1;
 
         self.setZeroFlag(register.* == 0);
-        self.setSubtractionFlag(false);
+        self.setSubtractionFlag(true);
         self.setHalfCarryFlag((original_value & 0x0F) == 0x00);
+    }
+
+    fn rotateLeft(self: *Cpu, register: *u8) void {
+        const old_bit_seven = (register.* >> 7) & 1;
+        register.* = register.* << 1;
+        register.* |= @as(u8, old_bit_seven);
+
+        self.setZeroFlag(false);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag(false);
+        self.setCarryFlag(old_bit_seven != 0);
     }
 
     // Flag z
