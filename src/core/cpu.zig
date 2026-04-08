@@ -1,6 +1,7 @@
 const Bus = @import("bus.zig").Bus;
 
 pub const CpuError = error{
+    NotYetSupportedOpcode,
     UnknownOpcode,
 };
 
@@ -128,6 +129,36 @@ pub const Cpu = struct {
             0x0F => { // RRCA
                 self.rotateRight(&self.registers.af.parts.a);
                 return 4;
+            },
+            0x10 => { // STOP
+                // TODO: Implement STOP when Input implementation needed is done
+                _ = self.fetch(bus);
+                return CpuError.NotYetSupportedOpcode;
+            },
+            0x11 => { // LD DE,u16
+                self.registers.de.parts.e = self.fetch(bus);
+                self.registers.de.parts.d = self.fetch(bus);
+                return 12;
+            },
+            0x12 => { // LD (DE),A
+                bus.write(self.registers.de.value, self.registers.af.parts.a);
+                return 8;
+            },
+            0x13 => { // INC DE
+                self.registers.de.value +%= 1;
+                return 8;
+            },
+            0x14 => { // INC D
+                self.incrementRegister(&self.registers.de.parts.d);
+                return 4;
+            },
+            0x15 => { // DEC D
+                self.decrementRegister(&self.registers.de.parts.d);
+                return 4;
+            },
+            0x16 => { // LD D,u8
+                self.registers.de.parts.d = self.fetch(bus);
+                return 8;
             },
 
             else => CpuError.UnknownOpcode,
