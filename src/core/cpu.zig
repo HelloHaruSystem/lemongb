@@ -85,6 +85,25 @@ pub const Cpu = struct {
         return (@as(u16, high) << 8) | @as(u16, low);
     }
 
+    fn push(self: *Cpu, bus: *Bus, register: u16) void {
+        const high = @as(u8, @truncate(register >> 8));
+        const low = @as(u8, @truncate(register));
+
+        self.registers.sp -%= 1;
+        bus.write(self.registers.sp, high);
+        self.registers.sp -%= 1;
+        bus.write(self.registers.sp, low);
+    }
+
+    fn pop(self: *Cpu, bus: *Bus) u16 {
+        const low = bus.read(self.registers.sp);
+        self.registers.sp +%= 1;
+        const high = bus.read(self.registers.sp);
+        self.registers.sp +%= 1;
+
+        return (@as(u16, high) << 8) | @as(u16, low);
+    }
+
     // Flag z
     fn getZeroFlag(self: *Cpu) bool {
         return (self.registers.af.parts.f & (1 << 7)) != 0;
