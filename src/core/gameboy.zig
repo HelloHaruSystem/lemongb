@@ -1,3 +1,5 @@
+const std = @import("std");
+const tracer = @import("../debug/tracer.zig");
 const Cpu = @import("cpu.zig").Cpu;
 const Bus = @import("bus.zig").Bus;
 const Cartridge = @import("cartridge.zig").Cartridge;
@@ -19,7 +21,13 @@ pub const Gameboy = struct {
         self.bus.loadCartridge(cartridge);
     }
 
-    pub fn step(self: *Gameboy) !void {
+    pub fn step(self: *Gameboy, trace_writer: ?*std.Io.Writer) !void {
+        if (trace_writer) |w| {
+            const state = self.cpu.toCpuState(&self.bus);
+            try tracer.trace(w, state);
+            try w.flush();
+        }
+
         self.cycles += try self.cpu.step(&self.bus);
     }
 };
