@@ -90,7 +90,7 @@ pub const Cpu = struct {
                 return 8;
             },
             0x07 => { // RLCA
-                self.rotateLeft(&self.registers.af.parts.a);
+                self.rotateLeftCircular(&self.registers.af.parts.a);
                 return 4;
             },
             0x08 => { // LD (u16), SP
@@ -127,7 +127,7 @@ pub const Cpu = struct {
                 return 8;
             },
             0x0F => { // RRCA
-                self.rotateRight(&self.registers.af.parts.a);
+                self.rotateRightCircular(&self.registers.af.parts.a);
                 return 4;
             },
             0x10 => { // STOP
@@ -159,6 +159,10 @@ pub const Cpu = struct {
             0x16 => { // LD D,u8
                 self.registers.de.parts.d = self.fetch(bus);
                 return 8;
+            },
+            0x17 => { // RLA
+                self.rotateLeftThroughCarry(&self.registers.af.parts.a);
+                return 4;
             },
 
             else => CpuError.UnknownOpcode,
@@ -219,7 +223,7 @@ pub const Cpu = struct {
         self.setHalfCarryFlag((original_value & 0x0F) == 0x00);
     }
 
-    fn rotateLeft(self: *Cpu, register: *u8) void {
+    fn rotateLeftCircular(self: *Cpu, register: *u8) void {
         const old_bit_seven = (register.* >> 7) & 1;
         register.* = register.* << 1;
         register.* |= @as(u8, old_bit_seven);
@@ -230,7 +234,18 @@ pub const Cpu = struct {
         self.setCarryFlag(old_bit_seven != 0);
     }
 
-    fn rotateRight(self: *Cpu, register: *u8) void {
+    fn rotateLeftThroughCarry(self: *Cpu, register: *u8) void {
+        const old_bit_seven = (register.* >> 7) & 1;
+        register.* = register.* << 1;
+        register.* |= if (self.getCarryFlag()) @as(u8, 1) else @as(u8, 0);
+
+        self.setZeroFlag(false);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag(false);
+        self.setCarryFlag(old_bit_seven != 0);
+    }
+
+    fn rotateRightCircular(self: *Cpu, register: *u8) void {
         const old_bit_zero = register.* & 1;
         register.* = register.* >> 1;
         register.* |= (old_bit_zero << 7);
