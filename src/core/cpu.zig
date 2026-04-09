@@ -201,6 +201,36 @@ pub const Cpu = struct {
                 const offset: i8 = @bitCast(self.fetch(bus));
                 return self.jumpRelativeIf(offset, !self.getZeroFlag());
             },
+            0x21 => { // LD HL,u16
+                self.registers.hl.parts.l = self.fetch(bus);
+                self.registers.hl.parts.h = self.fetch(bus);
+                return 12;
+            },
+            0x22 => { // LD (HL+),A
+                bus.write(self.registers.hl.value, self.registers.af.parts.a);
+                self.registers.hl.value +%= 1;
+                return 8;
+            },
+            0x23 => { // INC HL
+                self.registers.hl.value +%= 1;
+                return 8;
+            },
+            0x24 => { // INC H
+                self.incrementRegister(&self.registers.hl.parts.h);
+                return 4;
+            },
+            0x25 => { // DEC H
+                self.decrementRegister(&self.registers.hl.parts.h);
+                return 4;
+            },
+            0x26 => { // LD H,u8
+                self.registers.hl.parts.h = self.fetch(bus);
+                return 8;
+            },
+            0x27 => { // DAA
+                self.registers.af.parts.a = self.getDaaValue();
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
@@ -326,6 +356,34 @@ pub const Cpu = struct {
             return 12;
         }
         return 8;
+    }
+
+    fn getDaaValue(self: *Cpu) u8 {
+        const subtract = self.getSubtractionFlag();
+        var offset: u8 = 0;
+        var should_carry = false;
+        var value_a = self.registers.af.parts.a;
+
+        if (!subtract and (value_a & 0xF > 0x09) or self.getHalfCarryFlag()) {
+            offset |= 0x06;
+        }
+
+        if (!subtract and (value_a > 0x99) or self.getCarryFlag()) {
+            offset |= 0x60;
+            should_carry = true;
+        }
+
+        if (subtract) {
+            value_a -%= offset;
+        } else {
+            value_a +%= offset;
+        }
+
+        self.setZeroFlag(value_a == 0);
+        self.setHalfCarryFlag(false);
+        self.setCarryFlag(should_carry);
+
+        return value_a;
     }
 
     // Flag z
