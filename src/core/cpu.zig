@@ -164,6 +164,43 @@ pub const Cpu = struct {
                 self.rotateLeftThroughCarry(&self.registers.af.parts.a);
                 return 4;
             },
+            0x18 => { // JR i8
+                const offset: i8 = @bitCast(self.fetch(bus));
+                const signed_offset = @as(i16, offset);
+                const signed_pc = @as(i16, @bitCast(self.registers.pc));
+
+                const result = signed_pc +% signed_offset;
+                self.registers.pc = @bitCast(result);
+                return 12;
+            },
+            0x19 => { // ADD HL,DE
+                self.addHL(self.registers.de.value);
+                return 8;
+            },
+            0x1A => { // LD A,(DE)
+                self.registers.af.parts.a = bus.read(self.registers.de.value);
+                return 8;
+            },
+            0x1B => { // DEC DE
+                self.registers.de.value -%= 1;
+                return 8;
+            },
+            0x1C => { // INC E
+                self.incrementRegister(&self.registers.de.parts.e);
+                return 4;
+            },
+            0x1D => { // DEC E
+                self.decrementRegister(&self.registers.de.parts.e);
+                return 4;
+            },
+            0x1E => { // LD E,u8
+                self.registers.de.parts.e = self.fetch(bus);
+                return 8;
+            },
+            0x1F => { // RRA
+                self.rotateRightThroughCarry(&self.registers.af.parts.a);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
@@ -249,6 +286,17 @@ pub const Cpu = struct {
         const old_bit_zero = register.* & 1;
         register.* = register.* >> 1;
         register.* |= (old_bit_zero << 7);
+
+        self.setZeroFlag(false);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag(false);
+        self.setCarryFlag(old_bit_zero != 0);
+    }
+
+    fn rotateRightThroughCarry(self: *Cpu, register: *u8) void {
+        const old_bit_zero = register.* & 1;
+        register.* = register.* >> 1;
+        register.* |= if (self.getCarryFlag()) @as(u8, (1 << 7)) else @as(u8, (0));
 
         self.setZeroFlag(false);
         self.setSubtractionFlag(false);
