@@ -3,7 +3,7 @@ const Cpu = @import("cpu.zig").Cpu;
 const Bus = @import("bus.zig").Bus;
 
 // ---------------------------------------------------------------------------
-// AI generated
+// AI generated!
 // Test Harness
 // ---------------------------------------------------------------------------
 // Wraps a Cpu + Bus pair. Lets each test:

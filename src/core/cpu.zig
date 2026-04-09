@@ -166,11 +166,7 @@ pub const Cpu = struct {
             },
             0x18 => { // JR i8
                 const offset: i8 = @bitCast(self.fetch(bus));
-                const signed_offset = @as(i16, offset);
-                const signed_pc = @as(i16, @bitCast(self.registers.pc));
-
-                const result = signed_pc +% signed_offset;
-                self.registers.pc = @bitCast(result);
+                self.applyRelativeOffset(offset);
                 return 12;
             },
             0x19 => { // ADD HL,DE
@@ -200,6 +196,10 @@ pub const Cpu = struct {
             0x1F => { // RRA
                 self.rotateRightThroughCarry(&self.registers.af.parts.a);
                 return 4;
+            },
+            0x20 => { // JR NZ, i8
+                const offset: i8 = @bitCast(self.fetch(bus));
+                return self.jumpRelativeIf(offset, !self.getZeroFlag());
             },
 
             else => CpuError.UnknownOpcode,
@@ -311,6 +311,21 @@ pub const Cpu = struct {
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag((original_value & 0x0FFF) + (value & 0x0FFF) > 0x0FFF);
         self.setCarryFlag(@as(u32, original_value) + @as(u32, value) > 0xFFFF);
+    }
+
+    fn applyRelativeOffset(self: *Cpu, offset: i8) void {
+        const signed_offset = @as(i16, offset);
+        const signed_pc = @as(i16, @bitCast(self.registers.pc));
+
+        self.registers.pc = @bitCast(signed_pc +% signed_offset);
+    }
+
+    fn jumpRelativeIf(self: *Cpu, offset: i8, condition: bool) u8 {
+        if (condition) {
+            self.applyRelativeOffset(offset);
+            return 12;
+        }
+        return 8;
     }
 
     // Flag z
