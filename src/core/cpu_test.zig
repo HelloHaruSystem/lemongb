@@ -131,6 +131,12 @@ const Harness = struct {
     pub fn setC(self: *Harness, v: u8) void {
         self.cpu.registers.bc.parts.c = v;
     }
+    pub fn setD(self: *Harness, v: u8) void {
+        self.cpu.registers.de.parts.d = v;
+    }
+    pub fn setE(self: *Harness, v: u8) void {
+        self.cpu.registers.de.parts.e = v;
+    }
 
     /// Write a byte to an arbitrary bus address (for memory-operand tests).
     pub fn writeMem(self: *Harness, addr: u16, val: u8) void {
@@ -913,6 +919,793 @@ test "0x0F RRCA: all bits rotate correctly (0b11001010 -> 0b01100101)" {
 test "0x0F RRCA: consumes 4 T-cycles" {
     var h = Harness.init();
     h.load(&.{0x0F});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// Harness extensions needed for 0x10-0x1F tests
+// Add these methods to the Harness struct in your actual file
+//
+//   pub fn setD(self: *Harness, v: u8) void { self.cpu.registers.de.parts.d = v; }
+//   pub fn setE(self: *Harness, v: u8) void { self.cpu.registers.de.parts.e = v; }
+//   pub fn setCarry(self: *Harness, v: bool) void {
+//       if (v) {
+//           self.cpu.registers.af.parts.f |= (1 << 4);
+//       } else {
+//           self.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
+//       }
+//   }
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 0x10  STOP
+// ---------------------------------------------------------------------------
+
+test "0x10 STOP: returns NotYetSupportedOpcode error" {
+    var h = Harness.init();
+    h.load(&.{ 0x10, 0x00 });
+    const result = h.step();
+    try std.testing.expectError(error.NotYetSupportedOpcode, result);
+}
+
+test "0x10 STOP: advances PC past both bytes before erroring" {
+    var h = Harness.init();
+    h.load(&.{ 0x10, 0x00 });
+    const pc_before = h.regPC();
+    _ = h.step() catch {};
+    try std.testing.expectEqual(pc_before + 2, h.regPC());
+}
+
+// ---------------------------------------------------------------------------
+// 0x11  LD DE, u16
+// ---------------------------------------------------------------------------
+
+test "0x11 LD DE,u16: loads immediate little-endian u16 into DE" {
+    var h = Harness.init();
+    h.load(&.{ 0x11, 0x34, 0x12 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x1234), h.regDE());
+}
+
+test "0x11 LD DE,u16: low byte goes into E, high byte into D" {
+    var h = Harness.init();
+    h.load(&.{ 0x11, 0xAB, 0xCD });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regE());
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regD());
+}
+
+test "0x11 LD DE,u16: consumes 12 T-cycles and advances PC by 3" {
+    var h = Harness.init();
+    h.load(&.{ 0x11, 0x00, 0x00 });
+    const pc_before = h.regPC();
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 12), cycles);
+    try std.testing.expectEqual(pc_before + 3, h.regPC());
+}
+
+test "0x11 LD DE,u16: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x11, 0xFF, 0xFF });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x11 LD DE,u16: edge case 0x0000" {
+    var h = Harness.init();
+    h.load(&.{ 0x11, 0x00, 0x00 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regDE());
+}
+
+test "0x11 LD DE,u16: edge case 0xFFFF" {
+    var h = Harness.init();
+    h.load(&.{ 0x11, 0xFF, 0xFF });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xFFFF), h.regDE());
+}
+
+// ---------------------------------------------------------------------------
+// 0x12  LD (DE), A
+// ---------------------------------------------------------------------------
+
+test "0x12 LD (DE),A: writes A to memory address in DE" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.setA(0x42);
+    h.load(&.{0x12});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x42), h.readMem(0xC000));
+}
+
+test "0x12 LD (DE),A: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.setA(0x01);
+    h.load(&.{0x12});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x12 LD (DE),A: does not affect flags" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.setA(0xFF);
+    h.load(&.{0x12});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x12 LD (DE),A: does not modify DE" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.setA(0x01);
+    h.load(&.{0x12});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xC000), h.regDE());
+}
+
+// ---------------------------------------------------------------------------
+// 0x13  INC DE
+// ---------------------------------------------------------------------------
+
+test "0x13 INC DE: increments DE by 1" {
+    var h = Harness.init();
+    h.setDE(0x0000);
+    h.load(&.{0x13});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0001), h.regDE());
+}
+
+test "0x13 INC DE: wraps from 0xFFFF to 0x0000" {
+    var h = Harness.init();
+    h.setDE(0xFFFF);
+    h.load(&.{0x13});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regDE());
+}
+
+test "0x13 INC DE: does not affect flags" {
+    var h = Harness.init();
+    h.setDE(0xFFFF);
+    h.load(&.{0x13});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x13 INC DE: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x13});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x14  INC D
+// ---------------------------------------------------------------------------
+
+test "0x14 INC D: increments D by 1" {
+    var h = Harness.init();
+    h.setD(0x00);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x01), h.regD());
+}
+
+test "0x14 INC D: sets Z when result wraps to 0x00" {
+    var h = Harness.init();
+    h.setD(0xFF);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x14 INC D: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.setD(0x00);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x14 INC D: clears N flag" {
+    var h = Harness.init();
+    h.setD(0x10);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x14 INC D: sets H when lower nibble wraps (0x0F -> 0x10)" {
+    var h = Harness.init();
+    h.setD(0x0F);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x14 INC D: clears H when lower nibble does not wrap" {
+    var h = Harness.init();
+    h.setD(0x00);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x14 INC D: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.setD(0xFF);
+    h.load(&.{0x14});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x14 INC D: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x14});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x15  DEC D
+// ---------------------------------------------------------------------------
+
+test "0x15 DEC D: decrements D by 1" {
+    var h = Harness.init();
+    h.setD(0x10);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regD());
+}
+
+test "0x15 DEC D: wraps from 0x00 to 0xFF" {
+    var h = Harness.init();
+    h.setD(0x00);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regD());
+}
+
+test "0x15 DEC D: sets Z when result is 0x00" {
+    var h = Harness.init();
+    h.setD(0x01);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x15 DEC D: sets N flag" {
+    var h = Harness.init();
+    h.setD(0x10);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x15 DEC D: sets H when lower nibble borrows (0x10 -> 0x0F)" {
+    var h = Harness.init();
+    h.setD(0x10);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x15 DEC D: clears H when no borrow" {
+    var h = Harness.init();
+    h.setD(0x0F);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x15 DEC D: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.setD(0x00);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x15 DEC D: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x15});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x16  LD D, u8
+// ---------------------------------------------------------------------------
+
+test "0x16 LD D,u8: loads immediate byte into D" {
+    var h = Harness.init();
+    h.load(&.{ 0x16, 0xBE });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xBE), h.regD());
+}
+
+test "0x16 LD D,u8: edge case 0x00" {
+    var h = Harness.init();
+    h.load(&.{ 0x16, 0x00 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regD());
+}
+
+test "0x16 LD D,u8: edge case 0xFF" {
+    var h = Harness.init();
+    h.load(&.{ 0x16, 0xFF });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regD());
+}
+
+test "0x16 LD D,u8: consumes 8 T-cycles and advances PC by 2" {
+    var h = Harness.init();
+    h.load(&.{ 0x16, 0x00 });
+    const pc_before = h.regPC();
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+    try std.testing.expectEqual(pc_before + 2, h.regPC());
+}
+
+test "0x16 LD D,u8: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x16, 0xFF });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x17  RLA
+// ---------------------------------------------------------------------------
+
+test "0x17 RLA: old carry goes into bit 0" {
+    var h = Harness.init();
+    h.setA(0b00000000);
+    h.cpu.registers.af.parts.f |= (1 << 4); // set carry
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0b00000001), h.regA());
+}
+
+test "0x17 RLA: bit 7 goes into carry flag" {
+    var h = Harness.init();
+    h.setA(0b10000000);
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear carry
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x17 RLA: bit 7 zero clears carry" {
+    var h = Harness.init();
+    h.setA(0b00000000);
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expect(!h.flagC());
+}
+
+test "0x17 RLA: Z flag always cleared" {
+    var h = Harness.init();
+    h.setA(0x00);
+    h.cpu.registers.af.parts.f |= (1 << 7); // force Z set
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x17 RLA: N flag always cleared" {
+    var h = Harness.init();
+    h.setA(0xFF);
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x17 RLA: H flag always cleared" {
+    var h = Harness.init();
+    h.setA(0xFF);
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x17 RLA: full rotation with carry in and out" {
+    var h = Harness.init();
+    // A = 0b10110101, carry = 1
+    // result = 0b01101011, carry = 1 (old bit 7)
+    h.setA(0b10110101);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x17});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0b01101011), h.regA());
+    try std.testing.expect(h.flagC());
+}
+
+test "0x17 RLA: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x17});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x18  JR i8
+// ---------------------------------------------------------------------------
+
+test "0x18 JR i8: jumps forward by positive offset" {
+    var h = Harness.init();
+    // PC starts at 0x0100, fetch opcode -> 0x0101, fetch offset -> 0x0102
+    // offset = +5 -> PC = 0x0102 + 5 = 0x0107
+    h.load(&.{ 0x18, 0x05 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0107), h.regPC());
+}
+
+test "0x18 JR i8: jumps backward by negative offset" {
+    var h = Harness.init();
+    // offset = -4 (0xFC as i8) -> PC = 0x0102 + (-4) = 0x00FE
+    h.load(&.{ 0x18, 0xFC });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x00FE), h.regPC());
+}
+
+test "0x18 JR i8: offset of zero stays at PC+2" {
+    var h = Harness.init();
+    h.load(&.{ 0x18, 0x00 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0102), h.regPC());
+}
+
+test "0x18 JR i8: consumes 12 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{ 0x18, 0x00 });
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 12), cycles);
+}
+
+test "0x18 JR i8: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x18, 0x00 });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x19  ADD HL, DE
+// ---------------------------------------------------------------------------
+
+test "0x19 ADD HL,DE: adds DE to HL" {
+    var h = Harness.init();
+    h.setHL(0x0100);
+    h.setDE(0x0200);
+    h.load(&.{0x19});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0300), h.regHL());
+}
+
+test "0x19 ADD HL,DE: clears N flag" {
+    var h = Harness.init();
+    h.setHL(0x0001);
+    h.setDE(0x0001);
+    h.load(&.{0x19});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x19 ADD HL,DE: sets C on overflow past 0xFFFF" {
+    var h = Harness.init();
+    h.setHL(0xFFFF);
+    h.setDE(0x0001);
+    h.load(&.{0x19});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x19 ADD HL,DE: clears C when no overflow" {
+    var h = Harness.init();
+    h.setHL(0x0001);
+    h.setDE(0x0001);
+    h.load(&.{0x19});
+    _ = try h.step();
+    try std.testing.expect(!h.flagC());
+}
+
+test "0x19 ADD HL,DE: sets H on carry from bit 11" {
+    var h = Harness.init();
+    h.setHL(0x0FFF);
+    h.setDE(0x0001);
+    h.load(&.{0x19});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x19 ADD HL,DE: does not affect Z flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    h.setHL(0xFFFF);
+    h.setDE(0x0001);
+    h.load(&.{0x19});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x19 ADD HL,DE: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x19});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x1A  LD A, (DE)
+// ---------------------------------------------------------------------------
+
+test "0x1A LD A,(DE): loads byte from address in DE into A" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x1A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x55), h.regA());
+}
+
+test "0x1A LD A,(DE): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x1A});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x1A LD A,(DE): does not affect flags" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.writeMem(0xC000, 0xFF);
+    h.load(&.{0x1A});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x1A LD A,(DE): does not modify DE" {
+    var h = Harness.init();
+    h.setDE(0xC000);
+    h.writeMem(0xC000, 0x01);
+    h.load(&.{0x1A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xC000), h.regDE());
+}
+
+// ---------------------------------------------------------------------------
+// 0x1B  DEC DE
+// ---------------------------------------------------------------------------
+
+test "0x1B DEC DE: decrements DE by 1" {
+    var h = Harness.init();
+    h.setDE(0x0010);
+    h.load(&.{0x1B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x000F), h.regDE());
+}
+
+test "0x1B DEC DE: wraps from 0x0000 to 0xFFFF" {
+    var h = Harness.init();
+    h.setDE(0x0000);
+    h.load(&.{0x1B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xFFFF), h.regDE());
+}
+
+test "0x1B DEC DE: does not affect flags" {
+    var h = Harness.init();
+    h.setDE(0x0000);
+    h.load(&.{0x1B});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x1B DEC DE: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x1B});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x1C  INC E
+// ---------------------------------------------------------------------------
+
+test "0x1C INC E: increments E by 1" {
+    var h = Harness.init();
+    h.setE(0x10);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regE());
+}
+
+test "0x1C INC E: sets Z when result wraps to 0x00" {
+    var h = Harness.init();
+    h.setE(0xFF);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x1C INC E: sets H on lower nibble wrap (0x0F -> 0x10)" {
+    var h = Harness.init();
+    h.setE(0x0F);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x1C INC E: clears N flag" {
+    var h = Harness.init();
+    h.setE(0x01);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x1C INC E: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x1C});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x1D  DEC E
+// ---------------------------------------------------------------------------
+
+test "0x1D DEC E: decrements E by 1" {
+    var h = Harness.init();
+    h.setE(0x10);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regE());
+}
+
+test "0x1D DEC E: sets Z when result is 0x00" {
+    var h = Harness.init();
+    h.setE(0x01);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x1D DEC E: sets N flag" {
+    var h = Harness.init();
+    h.setE(0x05);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x1D DEC E: sets H on borrow (0x10 -> 0x0F)" {
+    var h = Harness.init();
+    h.setE(0x10);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x1D DEC E: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x1D});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x1E  LD E, u8
+// ---------------------------------------------------------------------------
+
+test "0x1E LD E,u8: loads immediate byte into E" {
+    var h = Harness.init();
+    h.load(&.{ 0x1E, 0xAB });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regE());
+}
+
+test "0x1E LD E,u8: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x1E, 0xFF });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x1E LD E,u8: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{ 0x1E, 0x00 });
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x1F  RRA
+// ---------------------------------------------------------------------------
+
+test "0x1F RRA: old carry goes into bit 7" {
+    var h = Harness.init();
+    h.setA(0b00000000);
+    h.cpu.registers.af.parts.f |= (1 << 4); // set carry
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0b10000000), h.regA());
+}
+
+test "0x1F RRA: bit 0 goes into carry flag" {
+    var h = Harness.init();
+    h.setA(0b00000001);
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear carry
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x1F RRA: bit 0 zero clears carry" {
+    var h = Harness.init();
+    h.setA(0b00000000);
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expect(!h.flagC());
+}
+
+test "0x1F RRA: Z flag always cleared" {
+    var h = Harness.init();
+    h.setA(0x00);
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x1F RRA: N flag always cleared" {
+    var h = Harness.init();
+    h.setA(0xFF);
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x1F RRA: H flag always cleared" {
+    var h = Harness.init();
+    h.setA(0xFF);
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x1F RRA: full rotation with carry in and out" {
+    var h = Harness.init();
+    // A = 0b10110101, carry = 1
+    // result = 0b11011010, carry = 1 (old bit 0)
+    h.setA(0b10110101);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x1F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0b11011010), h.regA());
+    try std.testing.expect(h.flagC());
+}
+
+test "0x1F RRA: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x1F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
