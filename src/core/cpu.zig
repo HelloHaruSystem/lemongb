@@ -342,6 +342,70 @@ pub const Cpu = struct {
                 self.setCarryFlag(!self.getCarryFlag());
                 return 4;
             },
+            0x40 => { // LD B,B
+                self.registers.bc.parts.b = self.registers.bc.parts.b;
+                return 4;
+            },
+            0x41 => { // LD B,C
+                self.registers.bc.parts.b = self.registers.bc.parts.c;
+                return 4;
+            },
+            0x42 => { // LD B,D
+                self.registers.bc.parts.b = self.registers.de.parts.d;
+                return 4;
+            },
+            0x43 => { // LD B,E
+                self.registers.bc.parts.b = self.registers.de.parts.e;
+                return 4;
+            },
+            0x44 => { // LD B,H
+                self.registers.bc.parts.b = self.registers.hl.parts.h;
+                return 4;
+            },
+            0x45 => { // LD B,L
+                self.registers.bc.parts.b = self.registers.hl.parts.l;
+                return 4;
+            },
+            0x46 => { // LD B,(HL)
+                self.registers.bc.parts.b = bus.read(self.registers.hl.value);
+                return 8;
+            },
+            0x47 => { // LD B,A
+                self.registers.bc.parts.b = self.registers.af.parts.a;
+                return 4;
+            },
+            0x48 => { // LD C,B
+                self.registers.bc.parts.c = self.registers.bc.parts.b;
+                return 4;
+            },
+            0x49 => { // LD C,C
+                self.registers.bc.parts.c = self.registers.bc.parts.c;
+                return 4;
+            },
+            0x4A => { // LD C,D
+                self.registers.bc.parts.c = self.registers.de.parts.d;
+                return 4;
+            },
+            0x4B => { // LD C,E
+                self.registers.bc.parts.c = self.registers.de.parts.e;
+                return 4;
+            },
+            0x4C => { // LD C,H
+                self.registers.bc.parts.c = self.registers.hl.parts.h;
+                return 4;
+            },
+            0x4D => { // LD C,L
+                self.registers.bc.parts.c = self.registers.hl.parts.l;
+                return 4;
+            },
+            0x4E => { // LD C,(HL)
+                self.registers.bc.parts.c = bus.read(self.registers.hl.value);
+                return 8;
+            },
+            0x4F => { // LD C,A
+                self.registers.bc.parts.c = self.registers.af.parts.a;
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
