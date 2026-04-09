@@ -231,6 +231,41 @@ pub const Cpu = struct {
                 self.registers.af.parts.a = self.getDaaValue();
                 return 4;
             },
+            0x28 => { // JR Z,i8
+                const offset: i8 = @bitCast(self.fetch(bus));
+                return self.jumpRelativeIf(offset, self.getZeroFlag());
+            },
+            0x29 => { // ADD HL,HL
+                self.addHL(self.registers.hl.value);
+                return 8;
+            },
+            0x2A => { // LD A,(HL+)
+                self.registers.af.parts.a = bus.read(self.registers.hl.value);
+                self.registers.hl.value +%= 1;
+                return 8;
+            },
+            0x2B => { // DEC HL
+                self.registers.hl.value -%= 1;
+                return 8;
+            },
+            0x2C => { // INC L
+                self.incrementRegister(&self.registers.hl.parts.l);
+                return 4;
+            },
+            0x2D => { // DEC L
+                self.decrementRegister(&self.registers.hl.parts.l);
+                return 4;
+            },
+            0x2E => { // LD L,u8
+                self.registers.hl.parts.l = self.fetch(bus);
+                return 8;
+            },
+            0x2F => { // CPL
+                self.registers.af.parts.a = ~self.registers.af.parts.a;
+                self.setSubtractionFlag(true);
+                self.setHalfCarryFlag(true);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
