@@ -78,11 +78,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x04 => { // INC B
-                self.incrementRegister(&self.registers.bc.parts.b);
+                self.increment8(&self.registers.bc.parts.b);
                 return 4;
             },
             0x05 => { // DEC B
-                self.decrementRegister(&self.registers.bc.parts.b);
+                self.decrement8(&self.registers.bc.parts.b);
                 return 4;
             },
             0x06 => { // LD B, u8
@@ -115,11 +115,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x0C => { // INC C
-                self.incrementRegister(&self.registers.bc.parts.c);
+                self.increment8(&self.registers.bc.parts.c);
                 return 4;
             },
             0x0D => { // DEC C
-                self.decrementRegister(&self.registers.bc.parts.c);
+                self.decrement8(&self.registers.bc.parts.c);
                 return 4;
             },
             0x0E => { // LD C,u8
@@ -149,11 +149,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x14 => { // INC D
-                self.incrementRegister(&self.registers.de.parts.d);
+                self.increment8(&self.registers.de.parts.d);
                 return 4;
             },
             0x15 => { // DEC D
-                self.decrementRegister(&self.registers.de.parts.d);
+                self.decrement8(&self.registers.de.parts.d);
                 return 4;
             },
             0x16 => { // LD D,u8
@@ -182,11 +182,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x1C => { // INC E
-                self.incrementRegister(&self.registers.de.parts.e);
+                self.increment8(&self.registers.de.parts.e);
                 return 4;
             },
             0x1D => { // DEC E
-                self.decrementRegister(&self.registers.de.parts.e);
+                self.decrement8(&self.registers.de.parts.e);
                 return 4;
             },
             0x1E => { // LD E,u8
@@ -216,11 +216,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x24 => { // INC H
-                self.incrementRegister(&self.registers.hl.parts.h);
+                self.increment8(&self.registers.hl.parts.h);
                 return 4;
             },
             0x25 => { // DEC H
-                self.decrementRegister(&self.registers.hl.parts.h);
+                self.decrement8(&self.registers.hl.parts.h);
                 return 4;
             },
             0x26 => { // LD H,u8
@@ -249,11 +249,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x2C => { // INC L
-                self.incrementRegister(&self.registers.hl.parts.l);
+                self.increment8(&self.registers.hl.parts.l);
                 return 4;
             },
             0x2D => { // DEC L
-                self.decrementRegister(&self.registers.hl.parts.l);
+                self.decrement8(&self.registers.hl.parts.l);
                 return 4;
             },
             0x2E => { // LD L,u8
@@ -264,6 +264,82 @@ pub const Cpu = struct {
                 self.registers.af.parts.a = ~self.registers.af.parts.a;
                 self.setSubtractionFlag(true);
                 self.setHalfCarryFlag(true);
+                return 4;
+            },
+            0x30 => { // JR NC,i8
+                const offset: i8 = @bitCast(self.fetch(bus));
+                return self.jumpRelativeIf(offset, !self.getCarryFlag());
+            },
+            0x31 => { // LD SP,u16
+                const low = self.fetch(bus);
+                const high = self.fetch(bus);
+                self.registers.sp = (@as(u16, high) << 8) | @as(u16, low);
+                return 12;
+            },
+            0x32 => { // LD (HL-),A
+                bus.write(self.registers.hl.value, self.registers.af.parts.a);
+                self.registers.hl.value -%= 1;
+                return 8;
+            },
+            0x33 => { // INC SP
+                self.registers.sp +%= 1;
+                return 8;
+            },
+            0x34 => { // INC (HL)
+                var value = bus.read(self.registers.hl.value);
+                self.increment8(&value);
+                bus.write(self.registers.hl.value, value);
+                return 12;
+            },
+            0x35 => { // DEC (HL)
+                var value = bus.read(self.registers.hl.value);
+                self.decrement8(&value);
+                bus.write(self.registers.hl.value, value);
+                return 12;
+            },
+            0x36 => { // LD (HL),u8
+                bus.write(self.registers.hl.value, self.fetch(bus));
+                return 12;
+            },
+            0x37 => { // SCF
+                self.setSubtractionFlag(false);
+                self.setHalfCarryFlag(false);
+                self.setCarryFlag(true);
+                return 4;
+            },
+            0x38 => { // JR C,i8
+                const offset: i8 = @bitCast(self.fetch(bus));
+                return self.jumpRelativeIf(offset, self.getCarryFlag());
+            },
+            0x39 => { // ADD HL,SP
+                self.addHL(self.registers.sp);
+                return 8;
+            },
+            0x3A => { // LD A,(HL-)
+                self.registers.af.parts.a = bus.read(self.registers.hl.value);
+                self.registers.hl.value -%= 1;
+                return 8;
+            },
+            0x3B => { // DEC SP
+                self.registers.sp -%= 1;
+                return 8;
+            },
+            0x3C => { // INC A
+                self.increment8(&self.registers.af.parts.a);
+                return 4;
+            },
+            0x3D => { // DEC A
+                self.decrement8(&self.registers.af.parts.a);
+                return 4;
+            },
+            0x3E => { // LD A,u8
+                self.registers.af.parts.a = self.fetch(bus);
+                return 8;
+            },
+            0x3F => { // CCF
+                self.setSubtractionFlag(false);
+                self.setHalfCarryFlag(false);
+                self.setCarryFlag(!self.getCarryFlag());
                 return 4;
             },
 
@@ -307,20 +383,20 @@ pub const Cpu = struct {
         return (@as(u16, high) << 8) | @as(u16, low);
     }
 
-    fn incrementRegister(self: *Cpu, register: *u8) void {
-        const original_value = register.*;
-        register.* +%= 1;
+    fn increment8(self: *Cpu, value: *u8) void {
+        const original_value = value.*;
+        value.* +%= 1;
 
-        self.setZeroFlag(register.* == 0);
+        self.setZeroFlag(value.* == 0);
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag((original_value & 0x0F) == 0x0F);
     }
 
-    fn decrementRegister(self: *Cpu, register: *u8) void {
-        const original_value = register.*;
-        register.* -%= 1;
+    fn decrement8(self: *Cpu, value: *u8) void {
+        const original_value = value.*;
+        value.* -%= 1;
 
-        self.setZeroFlag(register.* == 0);
+        self.setZeroFlag(value.* == 0);
         self.setSubtractionFlag(true);
         self.setHalfCarryFlag((original_value & 0x0F) == 0x00);
     }
