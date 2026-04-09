@@ -799,6 +799,34 @@ test "0x0C INC C: clears N flag" {
     try std.testing.expect(!h.flagN());
 }
 
+test "0x0C INC C: clears Z when result is non-zero" {
+    var h = Harness.init();
+    // Pre-set Z to confirm it gets cleared
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    h.setC(0x00);
+    h.load(&.{0x0C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x0C INC C: clears H when lower nibble does not wrap" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
+    h.setC(0x00);
+    h.load(&.{0x0C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x0C INC C: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.setC(0xFF);
+    h.load(&.{0x0C});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
 // ---------------------------------------------------------------------------
 // 0x0D  DEC C  (same flag rules as DEC B)
 // ---------------------------------------------------------------------------
@@ -833,6 +861,33 @@ test "0x0D DEC C: sets H on borrow from upper nibble (0x10 -> 0x0F)" {
     h.load(&.{0x0D});
     _ = try h.step();
     try std.testing.expect(h.flagH());
+}
+
+test "0x0D DEC C: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
+    h.setC(0x05);
+    h.load(&.{0x0D});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x0D DEC C: clears H when no borrow from upper nibble" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
+    h.setC(0x0F);
+    h.load(&.{0x0D});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x0D DEC C: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.setC(0x00);
+    h.load(&.{0x0D});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1281,15 @@ test "0x15 DEC D: consumes 4 T-cycles" {
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
 
+test "0x15 DEC D: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
+    h.setD(0x05);
+    h.load(&.{0x15});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
 // ---------------------------------------------------------------------------
 // 0x16  LD D, u8
 // ---------------------------------------------------------------------------
@@ -1572,6 +1636,33 @@ test "0x1C INC E: consumes 4 T-cycles" {
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
 
+test "0x1C INC E: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
+    h.setE(0x00);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x1C INC E: clears H when lower nibble does not wrap" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
+    h.setE(0x00);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x1C INC E: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.setE(0xFF);
+    h.load(&.{0x1C});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
 // ---------------------------------------------------------------------------
 // 0x1D  DEC E
 // ---------------------------------------------------------------------------
@@ -1613,6 +1704,33 @@ test "0x1D DEC E: consumes 4 T-cycles" {
     h.load(&.{0x1D});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+test "0x1D DEC E: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
+    h.setE(0x05);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x1D DEC E: clears H when no borrow from upper nibble" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
+    h.setE(0x0F);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x1D DEC E: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.setE(0x00);
+    h.load(&.{0x1D});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
 }
 
 // ---------------------------------------------------------------------------
