@@ -137,6 +137,12 @@ const Harness = struct {
     pub fn setE(self: *Harness, v: u8) void {
         self.cpu.registers.de.parts.e = v;
     }
+    pub fn setH(self: *Harness, v: u8) void {
+        self.cpu.registers.hl.parts.h = v;
+    }
+    pub fn setL(self: *Harness, v: u8) void {
+        self.cpu.registers.hl.parts.l = v;
+    }
 
     /// Write a byte to an arbitrary bus address (for memory-operand tests).
     pub fn writeMem(self: *Harness, addr: u16, val: u8) void {
@@ -1706,6 +1712,1041 @@ test "0x1F RRA: full rotation with carry in and out" {
 test "0x1F RRA: consumes 4 T-cycles" {
     var h = Harness.init();
     h.load(&.{0x1F});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x20  JR NZ, i8
+// ---------------------------------------------------------------------------
+// Spec: If Z flag is clear, PC += sign-extended offset (offset fetched AFTER
+//       the opcode, so PC has already advanced by 2 before the jump is applied).
+//       Taken: 12 T-cycles. Not taken: 8 T-cycles.
+
+test "0x20 JR NZ,i8: branches forward when Z is clear" {
+    var h = Harness.init();
+    // Clear Z flag
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
+    // offset = +4: PC will be 0x0102 after fetch, then +4 = 0x0106
+    h.load(&.{ 0x20, 0x04 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0106), h.regPC());
+}
+
+test "0x20 JR NZ,i8: branches backward when Z is clear" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
+    // offset = -2 (0xFE as i8): PC = 0x0102 after fetch, then -2 = 0x0100
+    h.load(&.{ 0x20, 0xFE });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0100), h.regPC());
+}
+
+test "0x20 JR NZ,i8: does not branch when Z is set" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // set Z
+    h.load(&.{ 0x20, 0x10 });
+    _ = try h.step();
+    // PC advances past opcode and offset only: 0x0100 + 2 = 0x0102
+    try std.testing.expectEqual(@as(u16, 0x0102), h.regPC());
+}
+
+test "0x20 JR NZ,i8: taken branch consumes 12 T-cycles" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
+    h.load(&.{ 0x20, 0x00 });
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 12), cycles);
+}
+
+test "0x20 JR NZ,i8: not-taken branch consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // Z set → no branch
+    h.load(&.{ 0x20, 0x00 });
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x20 JR NZ,i8: does not affect any flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
+    h.load(&.{ 0x20, 0x00 });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x21  LD HL, u16
+// ---------------------------------------------------------------------------
+// Spec: Load immediate 16-bit little-endian value into HL.
+//       12 T-cycles, PC+3. Flags unaffected.
+
+test "0x21 LD HL,u16: loads little-endian u16 into HL" {
+    var h = Harness.init();
+    h.load(&.{ 0x21, 0x34, 0x12 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x1234), h.regHL());
+}
+
+test "0x21 LD HL,u16: low byte goes into L, high byte into H" {
+    var h = Harness.init();
+    h.load(&.{ 0x21, 0xAB, 0xCD });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regL());
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regH());
+}
+
+test "0x21 LD HL,u16: consumes 12 T-cycles and advances PC by 3" {
+    var h = Harness.init();
+    h.load(&.{ 0x21, 0x00, 0x00 });
+    const pc_before = h.regPC();
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 12), cycles);
+    try std.testing.expectEqual(pc_before + 3, h.regPC());
+}
+
+test "0x21 LD HL,u16: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x21, 0xFF, 0xFF });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x21 LD HL,u16: edge case 0x0000" {
+    var h = Harness.init();
+    h.load(&.{ 0x21, 0x00, 0x00 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regHL());
+}
+
+test "0x21 LD HL,u16: edge case 0xFFFF" {
+    var h = Harness.init();
+    h.load(&.{ 0x21, 0xFF, 0xFF });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xFFFF), h.regHL());
+}
+
+// ---------------------------------------------------------------------------
+// 0x22  LD (HL+), A
+// ---------------------------------------------------------------------------
+// Spec: Write A to address in HL, then increment HL.
+//       8 T-cycles. Flags unaffected.
+
+test "0x22 LD (HL+),A: writes A to address held in HL" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.setA(0x77);
+    h.load(&.{0x22});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.readMem(0xC000));
+}
+
+test "0x22 LD (HL+),A: increments HL after the write" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.setA(0x01);
+    h.load(&.{0x22});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xC001), h.regHL());
+}
+
+test "0x22 LD (HL+),A: HL wraps from 0xFFFF to 0x0000" {
+    var h = Harness.init();
+    // Use a writable mirror address — Echo RAM mirrors 0xC000
+    // We need HL=0xFFFF but that's not writable. Use 0xFFFF -> write to IE (0xFFFF is writable).
+    // Actually the spec only requires HL increments; we test the increment, not the write destination.
+    h.setHL(0xFFFF);
+    h.setA(0x00);
+    // Write directly so the bus write to 0xFFFF (IE register) doesn't cause issues
+    h.load(&.{0x22});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regHL());
+}
+
+test "0x22 LD (HL+),A: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.setA(0x00);
+    h.load(&.{0x22});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x22 LD (HL+),A: does not affect flags" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.setA(0xFF);
+    h.load(&.{0x22});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x23  INC HL
+// ---------------------------------------------------------------------------
+// Spec: Increment HL by 1. 8 T-cycles. Flags unaffected.
+
+test "0x23 INC HL: increments HL by 1" {
+    var h = Harness.init();
+    h.setHL(0x0010);
+    h.load(&.{0x23});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0011), h.regHL());
+}
+
+test "0x23 INC HL: wraps from 0xFFFF to 0x0000" {
+    var h = Harness.init();
+    h.setHL(0xFFFF);
+    h.load(&.{0x23});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regHL());
+}
+
+test "0x23 INC HL: does not affect flags" {
+    var h = Harness.init();
+    h.setHL(0xFFFF);
+    h.load(&.{0x23});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x23 INC HL: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x23});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x24  INC H
+// ---------------------------------------------------------------------------
+// Spec: Increment H. Z set if result=0, N cleared, H set if low nibble wraps,
+//       C unaffected. 4 T-cycles.
+
+test "0x24 INC H: increments H by 1" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x10;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regH());
+}
+
+test "0x24 INC H: sets Z when result is 0x00 (wrap from 0xFF)" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0xFF;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regH());
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x24 INC H: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x00;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x24 INC H: clears N flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 6); // force N set
+    h.cpu.registers.hl.parts.h = 0x10;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x24 INC H: sets H when lower nibble wraps (0x0F -> 0x10)" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x0F;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x24 INC H: clears H when lower nibble does not wrap" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x00;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x24 INC H: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.cpu.registers.hl.parts.h = 0xFF;
+    h.load(&.{0x24});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x24 INC H: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x24});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x25  DEC H
+// ---------------------------------------------------------------------------
+// Spec: Decrement H. Z set if result=0, N set, H set if lower nibble borrows,
+//       C unaffected. 4 T-cycles.
+
+test "0x25 DEC H: decrements H by 1" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x10;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regH());
+}
+
+test "0x25 DEC H: wraps from 0x00 to 0xFF" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x00;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regH());
+}
+
+test "0x25 DEC H: sets Z when result is 0x00" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x01;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x25 DEC H: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x05;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x25 DEC H: sets N flag" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x10;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x25 DEC H: sets H when lower nibble borrows (0x10 -> 0x0F)" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x10;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x25 DEC H: clears H when no borrow from upper nibble" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x0F;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x25 DEC H: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.cpu.registers.hl.parts.h = 0x00;
+    h.load(&.{0x25});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x25 DEC H: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x25});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x26  LD H, u8
+// ---------------------------------------------------------------------------
+// Spec: Load immediate byte into H. 8 T-cycles, PC+2. Flags unaffected.
+
+test "0x26 LD H,u8: loads immediate byte into H" {
+    var h = Harness.init();
+    h.load(&.{ 0x26, 0xBE });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xBE), h.regH());
+}
+
+test "0x26 LD H,u8: edge case 0x00" {
+    var h = Harness.init();
+    h.load(&.{ 0x26, 0x00 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regH());
+}
+
+test "0x26 LD H,u8: edge case 0xFF" {
+    var h = Harness.init();
+    h.load(&.{ 0x26, 0xFF });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regH());
+}
+
+test "0x26 LD H,u8: consumes 8 T-cycles and advances PC by 2" {
+    var h = Harness.init();
+    h.load(&.{ 0x26, 0x00 });
+    const pc_before = h.regPC();
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+    try std.testing.expectEqual(pc_before + 2, h.regPC());
+}
+
+test "0x26 LD H,u8: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x26, 0xFF });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x27  DAA
+// ---------------------------------------------------------------------------
+// Spec: Decimal Adjust Accumulator. Corrects A after a BCD add/subtract.
+//       Z set if result is 0, N untouched, H always cleared,
+//       C set if BCD result exceeded 99 (carry out). 4 T-cycles.
+//
+// Reference: https://blog.ollien.com/posts/gb-daa/
+// and Pan Docs CPU instructions.
+
+test "0x27 DAA: adjusts after BCD addition with no flags" {
+    var h = Harness.init();
+    // 0x42 + 0x35 = 0x77 (both valid BCD, no correction needed)
+    h.setA(0x77);
+    // N=0, H=0, C=0
+    h.cpu.registers.af.parts.f = 0x00;
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regA());
+}
+
+test "0x27 DAA: corrects low nibble overflow after addition (adds 0x06)" {
+    var h = Harness.init();
+    // 0x42 + 0x29 = 0x6B — unit digit > 9, add 0x06 -> 0x71
+    h.setA(0x6B);
+    h.cpu.registers.af.parts.f = 0x00; // N=0, H=0, C=0
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x71), h.regA());
+}
+
+test "0x27 DAA: corrects upper nibble overflow after addition (adds 0x60)" {
+    var h = Harness.init();
+    // A = 0xC4, tens digit > 9 -> add 0x60 -> 0x24 with carry
+    h.setA(0xC4);
+    h.cpu.registers.af.parts.f = 0x00; // N=0, H=0, C=0
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x24), h.regA());
+    try std.testing.expect(h.flagC());
+}
+
+test "0x27 DAA: corrects via carry flag set (adds 0x60 regardless of A value)" {
+    var h = Harness.init();
+    // A = 0x10, carry set from previous op -> add 0x60 -> 0x70, carry remains
+    h.setA(0x10);
+    h.cpu.registers.af.parts.f = (1 << 4); // C=1, N=0, H=0
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x70), h.regA());
+    try std.testing.expect(h.flagC());
+}
+
+test "0x27 DAA: corrects via half-carry flag set (adds 0x06)" {
+    var h = Harness.init();
+    // A = 0x11, H set from previous op -> add 0x06 -> 0x17
+    h.setA(0x11);
+    h.cpu.registers.af.parts.f = (1 << 5); // H=1, N=0, C=0
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x17), h.regA());
+}
+
+test "0x27 DAA: sets Z when corrected result is 0x00" {
+    var h = Harness.init();
+    // A = 0x9A, no flags: 0x9A > 0x99 so add 0x60 -> 0xFA, low nibble 0xA > 9
+    // so also add 0x06 -> 0x00 with carry
+    h.setA(0x9A);
+    h.cpu.registers.af.parts.f = 0x00;
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+    try std.testing.expectEqual(@as(u8, 0x00), h.regA());
+}
+
+test "0x27 DAA: always clears H flag" {
+    var h = Harness.init();
+    h.setA(0x11);
+    h.cpu.registers.af.parts.f = (1 << 5); // H=1
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x27 DAA: does not modify N flag" {
+    var h = Harness.init();
+    // N=1 (subtract path)
+    h.setA(0x07);
+    h.cpu.registers.af.parts.f = (1 << 6); // N=1, H=0, C=0
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x27 DAA: subtraction path: corrects via half-carry (subtracts 0x06)" {
+    var h = Harness.init();
+    // 0x20 - 0x13 = 0x0D, half-carry was set -> subtract 0x06 -> 0x07
+    h.setA(0x0D);
+    h.cpu.registers.af.parts.f = (1 << 6) | (1 << 5); // N=1, H=1
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x07), h.regA());
+}
+
+test "0x27 DAA: subtraction path: corrects via carry (subtracts 0x60)" {
+    var h = Harness.init();
+    // 0x05 - 0x21 = 0xE4, carry was set -> subtract 0x60 -> 0x84
+    h.setA(0xE4);
+    h.cpu.registers.af.parts.f = (1 << 6) | (1 << 4); // N=1, C=1
+    h.load(&.{0x27});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x84), h.regA());
+    try std.testing.expect(h.flagC());
+}
+
+test "0x27 DAA: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.setA(0x00);
+    h.cpu.registers.af.parts.f = 0x00;
+    h.load(&.{0x27});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x28  JR Z, i8
+// ---------------------------------------------------------------------------
+// Spec: If Z flag is set, PC += sign-extended offset.
+//       Taken: 12 T-cycles. Not taken: 8 T-cycles.
+
+test "0x28 JR Z,i8: branches forward when Z is set" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // set Z
+    // offset = +4: PC = 0x0102 after fetch, then +4 = 0x0106
+    h.load(&.{ 0x28, 0x04 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0106), h.regPC());
+}
+
+test "0x28 JR Z,i8: branches backward when Z is set" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    // offset = -2 (0xFE): PC = 0x0102 after fetch, then -2 = 0x0100
+    h.load(&.{ 0x28, 0xFE });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0100), h.regPC());
+}
+
+test "0x28 JR Z,i8: does not branch when Z is clear" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7)); // clear Z
+    h.load(&.{ 0x28, 0x10 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0102), h.regPC());
+}
+
+test "0x28 JR Z,i8: taken branch consumes 12 T-cycles" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    h.load(&.{ 0x28, 0x00 });
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 12), cycles);
+}
+
+test "0x28 JR Z,i8: not-taken branch consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
+    h.load(&.{ 0x28, 0x00 });
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x28 JR Z,i8: does not affect any flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    h.load(&.{ 0x28, 0x00 });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x29  ADD HL, HL
+// ---------------------------------------------------------------------------
+// Spec: HL = HL + HL (i.e. HL << 1).
+//       N cleared, H set if carry from bit 11, C set if carry from bit 15,
+//       Z unaffected. 8 T-cycles.
+
+test "0x29 ADD HL,HL: doubles HL" {
+    var h = Harness.init();
+    h.setHL(0x0010);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0020), h.regHL());
+}
+
+test "0x29 ADD HL,HL: wraps on overflow" {
+    var h = Harness.init();
+    h.setHL(0x8000);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regHL());
+}
+
+test "0x29 ADD HL,HL: sets C on 16-bit carry" {
+    var h = Harness.init();
+    h.setHL(0x8000);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x29 ADD HL,HL: clears C when no 16-bit carry" {
+    var h = Harness.init();
+    h.setHL(0x0001);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expect(!h.flagC());
+}
+
+test "0x29 ADD HL,HL: sets H on carry from bit 11" {
+    var h = Harness.init();
+    // 0x0800 + 0x0800 = 0x1000 — bit 11 carries into bit 12
+    h.setHL(0x0800);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x29 ADD HL,HL: clears H when no carry from bit 11" {
+    var h = Harness.init();
+    h.setHL(0x0001);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x29 ADD HL,HL: clears N flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 6); // force N set
+    h.setHL(0x0010);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x29 ADD HL,HL: does not affect Z flag" {
+    var h = Harness.init();
+    // Z set before; HL=0x8000 -> result=0x0000, but Z must not be touched
+    h.cpu.registers.af.parts.f |= (1 << 7); // set Z
+    h.setHL(0x8000);
+    h.load(&.{0x29});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ()); // still set — ADD HL does not touch Z
+}
+
+test "0x29 ADD HL,HL: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x29});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x2A  LD A, (HL+)
+// ---------------------------------------------------------------------------
+// Spec: Load byte from address in HL into A, then increment HL.
+//       8 T-cycles. Flags unaffected.
+
+test "0x2A LD A,(HL+): loads byte from address in HL into A" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x2A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x55), h.regA());
+}
+
+test "0x2A LD A,(HL+): increments HL after the read" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x2A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xC001), h.regHL());
+}
+
+test "0x2A LD A,(HL+): HL wraps from 0xFFFF to 0x0000" {
+    var h = Harness.init();
+    h.setHL(0xFFFF);
+    // 0xFFFF is IE register — readable
+    h.load(&.{0x2A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), h.regHL());
+}
+
+test "0x2A LD A,(HL+): reads the address before incrementing" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0xAB);
+    h.writeMem(0xC001, 0xCD);
+    h.load(&.{0x2A});
+    _ = try h.step();
+    // Must have read 0xC000 (0xAB), not 0xC001
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regA());
+}
+
+test "0x2A LD A,(HL+): does not affect flags" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0xFF);
+    h.load(&.{0x2A});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x2A LD A,(HL+): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x2A});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x2B  DEC HL
+// ---------------------------------------------------------------------------
+// Spec: Decrement HL by 1. 8 T-cycles. Flags unaffected.
+
+test "0x2B DEC HL: decrements HL by 1" {
+    var h = Harness.init();
+    h.setHL(0x0010);
+    h.load(&.{0x2B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0x000F), h.regHL());
+}
+
+test "0x2B DEC HL: wraps from 0x0000 to 0xFFFF" {
+    var h = Harness.init();
+    h.setHL(0x0000);
+    h.load(&.{0x2B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xFFFF), h.regHL());
+}
+
+test "0x2B DEC HL: does not affect flags" {
+    var h = Harness.init();
+    h.setHL(0x0000);
+    h.load(&.{0x2B});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x2B DEC HL: consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x2B});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x2C  INC L
+// ---------------------------------------------------------------------------
+// Spec: Increment L. Z set if result=0, N cleared, H set if low nibble wraps,
+//       C unaffected. 4 T-cycles.
+
+test "0x2C INC L: increments L by 1" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x10;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regL());
+}
+
+test "0x2C INC L: sets Z when result wraps to 0x00" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0xFF;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x2C INC L: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x00;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x2C INC L: sets H on lower nibble wrap (0x0F -> 0x10)" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x0F;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x2C INC L: clears H when lower nibble does not wrap" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x00;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x2C INC L: clears N flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 6);
+    h.cpu.registers.hl.parts.l = 0x01;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expect(!h.flagN());
+}
+
+test "0x2C INC L: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.cpu.registers.hl.parts.l = 0xFF;
+    h.load(&.{0x2C});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x2C INC L: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x2C});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x2D  DEC L
+// ---------------------------------------------------------------------------
+// Spec: Decrement L. Z set if result=0, N set, H set if lower nibble borrows,
+//       C unaffected. 4 T-cycles.
+
+test "0x2D DEC L: decrements L by 1" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x10;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regL());
+}
+
+test "0x2D DEC L: wraps from 0x00 to 0xFF" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x00;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regL());
+}
+
+test "0x2D DEC L: sets Z when result is 0x00" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x01;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x2D DEC L: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x05;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x2D DEC L: sets N flag" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x10;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x2D DEC L: sets H on borrow (0x10 -> 0x0F)" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x10;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x2D DEC L: clears H when no borrow from upper nibble" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.l = 0x0F;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x2D DEC L: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.cpu.registers.hl.parts.l = 0x00;
+    h.load(&.{0x2D});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x2D DEC L: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x2D});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x2E  LD L, u8
+// ---------------------------------------------------------------------------
+// Spec: Load immediate byte into L. 8 T-cycles, PC+2. Flags unaffected.
+
+test "0x2E LD L,u8: loads immediate byte into L" {
+    var h = Harness.init();
+    h.load(&.{ 0x2E, 0xAB });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regL());
+}
+
+test "0x2E LD L,u8: edge case 0x00" {
+    var h = Harness.init();
+    h.load(&.{ 0x2E, 0x00 });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regL());
+}
+
+test "0x2E LD L,u8: edge case 0xFF" {
+    var h = Harness.init();
+    h.load(&.{ 0x2E, 0xFF });
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regL());
+}
+
+test "0x2E LD L,u8: consumes 8 T-cycles and advances PC by 2" {
+    var h = Harness.init();
+    h.load(&.{ 0x2E, 0x00 });
+    const pc_before = h.regPC();
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+    try std.testing.expectEqual(pc_before + 2, h.regPC());
+}
+
+test "0x2E LD L,u8: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{ 0x2E, 0xFF });
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+// ---------------------------------------------------------------------------
+// 0x2F  CPL
+// ---------------------------------------------------------------------------
+// Spec: Complement accumulator (A = ~A).
+//       N and H always set. Z and C unaffected. 4 T-cycles.
+
+test "0x2F CPL: complements all bits of A" {
+    var h = Harness.init();
+    h.setA(0b10110101);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0b01001010), h.regA());
+}
+
+test "0x2F CPL: complement of 0x00 is 0xFF" {
+    var h = Harness.init();
+    h.setA(0x00);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regA());
+}
+
+test "0x2F CPL: complement of 0xFF is 0x00" {
+    var h = Harness.init();
+    h.setA(0xFF);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regA());
+}
+
+test "0x2F CPL: always sets N flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 6)); // clear N
+    h.setA(0x55);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x2F CPL: always sets H flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 5)); // clear H
+    h.setA(0x55);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x2F CPL: does not affect Z flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7); // set Z
+    h.setA(0x55);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ()); // Z unchanged
+}
+
+test "0x2F CPL: does not affect C flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.setA(0x55);
+    h.load(&.{0x2F});
+    _ = try h.step();
+    try std.testing.expect(h.flagC()); // C unchanged
+}
+
+test "0x2F CPL: applying twice restores original value" {
+    var h = Harness.init();
+    h.setA(0xA5);
+    h.load(&.{ 0x2F, 0x2F });
+    _ = try h.step();
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xA5), h.regA());
+}
+
+test "0x2F CPL: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x2F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }

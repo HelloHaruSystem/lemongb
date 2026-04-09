@@ -399,11 +399,11 @@ pub const Cpu = struct {
         var should_carry = false;
         var value_a = self.registers.af.parts.a;
 
-        if (!subtract and (value_a & 0xF > 0x09) or self.getHalfCarryFlag()) {
+        if ((!subtract and ((value_a & 0xF) > 0x09)) or self.getHalfCarryFlag()) {
             offset |= 0x06;
         }
 
-        if (!subtract and (value_a > 0x99) or self.getCarryFlag()) {
+        if ((!subtract and (value_a > 0x99)) or self.getCarryFlag()) {
             offset |= 0x60;
             should_carry = true;
         }

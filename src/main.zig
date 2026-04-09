@@ -43,11 +43,12 @@ pub fn main() !void {
 
     // setup trace writer if needed
     var trace_writer: ?*std.Io.Writer = null;
+    var trace_w: std.fs.File.Writer = undefined;
     var trace_buffer: [128]u8 = undefined;
     if (trace_enabled) {
         try std.fs.cwd().makePath("logs");
         const trace_file = try std.fs.cwd().createFile("logs/trace", .{ .truncate = true });
-        var trace_w = trace_file.writer(&trace_buffer);
+        trace_w = trace_file.writer(&trace_buffer);
         trace_writer = &trace_w.interface;
     }
 
