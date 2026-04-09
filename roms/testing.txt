@@ -1,5 +1,5 @@
 # Run the emulator with tracing example
-zig build run -- roms/01/special.gb --trace
+zig build run -- roms/test_roms/individual/01/special.gb --trace
 
 # Feed the trace to gameboy doctor example
 ./gameboy-doctor/gameboy-doctor logs/trace cpu_instrs 1

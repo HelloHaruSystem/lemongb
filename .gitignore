@@ -3,3 +3,6 @@
 zig-out/
 
 .vscode/
+
+roms/test_roms/*
+logs/
