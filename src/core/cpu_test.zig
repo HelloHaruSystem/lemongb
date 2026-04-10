@@ -4474,3 +4474,581 @@ test "0x4F LD C,A: consumes 4 T-cycles" {
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
+
+// ---------------------------------------------------------------------------
+// Row 6: 0x50-0x5F  LD r, r' / LD r, (HL)
+// ---------------------------------------------------------------------------
+// Spec: Load register r with value from register r' (or memory at HL).
+//       Register variants: 4 T-cycles, PC+1, flags unaffected.
+//       (HL) variants: 8 T-cycles, PC+1, flags unaffected.
+//
+// The destination register for this row is always D (0x50-0x57)
+// or E (0x58-0x5F).
+
+// ---------------------------------------------------------------------------
+// 0x50  LD D, B
+// ---------------------------------------------------------------------------
+
+test "0x50 LD D,B: loads B into D" {
+    var h = Harness.init();
+    h.setB(0xAB);
+    h.setD(0x00);
+    h.load(&.{0x50});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regD());
+}
+
+test "0x50 LD D,B: does not modify B" {
+    var h = Harness.init();
+    h.setB(0xAB);
+    h.load(&.{0x50});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regB());
+}
+
+test "0x50 LD D,B: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x50});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x50 LD D,B: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x50});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x51  LD D, C
+// ---------------------------------------------------------------------------
+
+test "0x51 LD D,C: loads C into D" {
+    var h = Harness.init();
+    h.setC(0xCD);
+    h.setD(0x00);
+    h.load(&.{0x51});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regD());
+}
+
+test "0x51 LD D,C: does not modify C" {
+    var h = Harness.init();
+    h.setC(0xCD);
+    h.load(&.{0x51});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regC());
+}
+
+test "0x51 LD D,C: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x51});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x51 LD D,C: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x51});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x52  LD D, D
+// ---------------------------------------------------------------------------
+
+test "0x52 LD D,D: D is unchanged" {
+    var h = Harness.init();
+    h.setD(0x42);
+    h.load(&.{0x52});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x42), h.regD());
+}
+
+test "0x52 LD D,D: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x52});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x52 LD D,D: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x52});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x53  LD D, E
+// ---------------------------------------------------------------------------
+
+test "0x53 LD D,E: loads E into D" {
+    var h = Harness.init();
+    h.setE(0x11);
+    h.setD(0x00);
+    h.load(&.{0x53});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regD());
+}
+
+test "0x53 LD D,E: does not modify E" {
+    var h = Harness.init();
+    h.setE(0x11);
+    h.load(&.{0x53});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regE());
+}
+
+test "0x53 LD D,E: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x53});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x53 LD D,E: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x53});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x54  LD D, H
+// ---------------------------------------------------------------------------
+
+test "0x54 LD D,H: loads H into D" {
+    var h = Harness.init();
+    h.setH(0x22);
+    h.setD(0x00);
+    h.load(&.{0x54});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x22), h.regD());
+}
+
+test "0x54 LD D,H: does not modify H" {
+    var h = Harness.init();
+    h.setH(0x22);
+    h.load(&.{0x54});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x22), h.regH());
+}
+
+test "0x54 LD D,H: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x54});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x54 LD D,H: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x54});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x55  LD D, L
+// ---------------------------------------------------------------------------
+
+test "0x55 LD D,L: loads L into D" {
+    var h = Harness.init();
+    h.setL(0x33);
+    h.setD(0x00);
+    h.load(&.{0x55});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x33), h.regD());
+}
+
+test "0x55 LD D,L: does not modify L" {
+    var h = Harness.init();
+    h.setL(0x33);
+    h.load(&.{0x55});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x33), h.regL());
+}
+
+test "0x55 LD D,L: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x55});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x55 LD D,L: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x55});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x56  LD D, (HL)
+// ---------------------------------------------------------------------------
+
+test "0x56 LD D,(HL): loads byte from address in HL into D" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x56});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x55), h.regD());
+}
+
+test "0x56 LD D,(HL): does not modify HL" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x56});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xC000), h.regHL());
+}
+
+test "0x56 LD D,(HL): does not affect flags" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0xFF);
+    h.load(&.{0x56});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x56 LD D,(HL): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x56});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x57  LD D, A
+// ---------------------------------------------------------------------------
+
+test "0x57 LD D,A: loads A into D" {
+    var h = Harness.init();
+    h.setA(0x77);
+    h.setD(0x00);
+    h.load(&.{0x57});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regD());
+}
+
+test "0x57 LD D,A: does not modify A" {
+    var h = Harness.init();
+    h.setA(0x77);
+    h.load(&.{0x57});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regA());
+}
+
+test "0x57 LD D,A: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x57});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x57 LD D,A: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x57});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x58  LD E, B
+// ---------------------------------------------------------------------------
+
+test "0x58 LD E,B: loads B into E" {
+    var h = Harness.init();
+    h.setB(0xAB);
+    h.setE(0x00);
+    h.load(&.{0x58});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regE());
+}
+
+test "0x58 LD E,B: does not modify B" {
+    var h = Harness.init();
+    h.setB(0xAB);
+    h.load(&.{0x58});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regB());
+}
+
+test "0x58 LD E,B: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x58});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x58 LD E,B: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x58});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x59  LD E, C
+// ---------------------------------------------------------------------------
+
+test "0x59 LD E,C: loads C into E" {
+    var h = Harness.init();
+    h.setC(0xCD);
+    h.setE(0x00);
+    h.load(&.{0x59});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regE());
+}
+
+test "0x59 LD E,C: does not modify C" {
+    var h = Harness.init();
+    h.setC(0xCD);
+    h.load(&.{0x59});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regC());
+}
+
+test "0x59 LD E,C: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x59});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x59 LD E,C: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x59});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x5A  LD E, D
+// ---------------------------------------------------------------------------
+
+test "0x5A LD E,D: loads D into E" {
+    var h = Harness.init();
+    h.setD(0x11);
+    h.setE(0x00);
+    h.load(&.{0x5A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regE());
+}
+
+test "0x5A LD E,D: does not modify D" {
+    var h = Harness.init();
+    h.setD(0x11);
+    h.load(&.{0x5A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regD());
+}
+
+test "0x5A LD E,D: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x5A});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x5A LD E,D: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x5A});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x5B  LD E, E
+// ---------------------------------------------------------------------------
+
+test "0x5B LD E,E: E is unchanged" {
+    var h = Harness.init();
+    h.setE(0x42);
+    h.load(&.{0x5B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x42), h.regE());
+}
+
+test "0x5B LD E,E: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x5B});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x5B LD E,E: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x5B});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x5C  LD E, H
+// ---------------------------------------------------------------------------
+
+test "0x5C LD E,H: loads H into E" {
+    var h = Harness.init();
+    h.setH(0x22);
+    h.setE(0x00);
+    h.load(&.{0x5C});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x22), h.regE());
+}
+
+test "0x5C LD E,H: does not modify H" {
+    var h = Harness.init();
+    h.setH(0x22);
+    h.load(&.{0x5C});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x22), h.regH());
+}
+
+test "0x5C LD E,H: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x5C});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x5C LD E,H: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x5C});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x5D  LD E, L
+// ---------------------------------------------------------------------------
+
+test "0x5D LD E,L: loads L into E" {
+    var h = Harness.init();
+    h.setL(0x33);
+    h.setE(0x00);
+    h.load(&.{0x5D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x33), h.regE());
+}
+
+test "0x5D LD E,L: does not modify L" {
+    var h = Harness.init();
+    h.setL(0x33);
+    h.load(&.{0x5D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x33), h.regL());
+}
+
+test "0x5D LD E,L: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x5D});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x5D LD E,L: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x5D});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x5E  LD E, (HL)
+// ---------------------------------------------------------------------------
+
+test "0x5E LD E,(HL): loads byte from address in HL into E" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x5E});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x55), h.regE());
+}
+
+test "0x5E LD E,(HL): does not modify HL" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x5E});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u16, 0xC000), h.regHL());
+}
+
+test "0x5E LD E,(HL): does not affect flags" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0xFF);
+    h.load(&.{0x5E});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x5E LD E,(HL): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x5E});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x5F  LD E, A
+// ---------------------------------------------------------------------------
+
+test "0x5F LD E,A: loads A into E" {
+    var h = Harness.init();
+    h.setA(0x77);
+    h.setE(0x00);
+    h.load(&.{0x5F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regE());
+}
+
+test "0x5F LD E,A: does not modify A" {
+    var h = Harness.init();
+    h.setA(0x77);
+    h.load(&.{0x5F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regA());
+}
+
+test "0x5F LD E,A: does not affect flags" {
+    var h = Harness.init();
+    h.load(&.{0x5F});
+    const f_before = h.regF();
+    _ = try h.step();
+    try std.testing.expectEqual(f_before, h.regF());
+}
+
+test "0x5F LD E,A: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x5F});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
