@@ -662,6 +662,70 @@ pub const Cpu = struct {
                 self.addAWithCarry(self.registers.af.parts.a);
                 return 4;
             },
+            0x90 => { // SUB A,B
+                self.subtractA(self.registers.bc.parts.b);
+                return 4;
+            },
+            0x91 => { // SUB A,C
+                self.subtractA(self.registers.bc.parts.c);
+                return 4;
+            },
+            0x92 => { // SUB A,D
+                self.subtractA(self.registers.de.parts.d);
+                return 4;
+            },
+            0x93 => { // SUB A,E
+                self.subtractA(self.registers.de.parts.e);
+                return 4;
+            },
+            0x94 => { // SUB A,H
+                self.subtractA(self.registers.hl.parts.h);
+                return 4;
+            },
+            0x95 => { // SUB A,L
+                self.subtractA(self.registers.hl.parts.l);
+                return 4;
+            },
+            0x96 => { // SUB A,(HL)
+                self.subtractA(bus.read(self.registers.hl.value));
+                return 8;
+            },
+            0x97 => { // SUB A,A
+                self.subtractA(self.registers.af.parts.a);
+                return 4;
+            },
+            0x98 => { // SBC A,B
+                self.subtractAWithCarry(self.registers.bc.parts.b);
+                return 4;
+            },
+            0x99 => { // SBC A,C
+                self.subtractAWithCarry(self.registers.bc.parts.c);
+                return 4;
+            },
+            0x9A => { // SBC A,D
+                self.subtractAWithCarry(self.registers.de.parts.d);
+                return 4;
+            },
+            0x9B => { // SBC A,E
+                self.subtractAWithCarry(self.registers.de.parts.e);
+                return 4;
+            },
+            0x9C => { // SBC A,H
+                self.subtractAWithCarry(self.registers.hl.parts.h);
+                return 4;
+            },
+            0x9D => { // SBC A,L
+                self.subtractAWithCarry(self.registers.hl.parts.l);
+                return 4;
+            },
+            0x9E => { // SBC A,(HL)
+                self.subtractAWithCarry(bus.read(self.registers.hl.value));
+                return 8;
+            },
+            0x9F => { // SBC A,A
+                self.subtractAWithCarry(self.registers.af.parts.a);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
