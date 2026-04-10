@@ -534,6 +534,70 @@ pub const Cpu = struct {
                 self.registers.hl.parts.l = self.registers.af.parts.a;
                 return 4;
             },
+            0x70 => { // LD (HL),B
+                bus.write(self.registers.hl.value, self.registers.bc.parts.b);
+                return 8;
+            },
+            0x71 => { // LD (HL),C
+                bus.write(self.registers.hl.value, self.registers.bc.parts.c);
+                return 8;
+            },
+            0x72 => { // LD (HL),D
+                bus.write(self.registers.hl.value, self.registers.de.parts.d);
+                return 8;
+            },
+            0x73 => { // LD (HL),E
+                bus.write(self.registers.hl.value, self.registers.de.parts.e);
+                return 8;
+            },
+            0x74 => { // LD (HL),H
+                bus.write(self.registers.hl.value, self.registers.hl.parts.h);
+                return 8;
+            },
+            0x75 => { // LD (HL),L
+                bus.write(self.registers.hl.value, self.registers.hl.parts.l);
+                return 8;
+            },
+            0x76 => { // HALT
+                // TODO: Implement HALT
+                return CpuError.NotYetSupportedOpcode;
+            },
+            0x77 => { // LD (HL),A
+                bus.write(self.registers.hl.value, self.registers.af.parts.a);
+                return 8;
+            },
+            0x78 => { // LD A,B
+                self.registers.af.parts.a = self.registers.bc.parts.b;
+                return 4;
+            },
+            0x79 => { // LD A,C
+                self.registers.af.parts.a = self.registers.bc.parts.c;
+                return 4;
+            },
+            0x7A => { // LD A,D
+                self.registers.af.parts.a = self.registers.de.parts.d;
+                return 4;
+            },
+            0x7B => { // LD A,E
+                self.registers.af.parts.a = self.registers.de.parts.e;
+                return 4;
+            },
+            0x7C => { // LD A,H
+                self.registers.af.parts.a = self.registers.hl.parts.h;
+                return 4;
+            },
+            0x7D => { // LD A,L
+                self.registers.af.parts.a = self.registers.hl.parts.l;
+                return 4;
+            },
+            0x7E => { // LD A,(HL)
+                self.registers.af.parts.a = bus.read(self.registers.hl.value);
+                return 8;
+            },
+            0x7F => { // LD A,A
+                self.registers.af.parts.a = self.registers.af.parts.a;
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
