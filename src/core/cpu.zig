@@ -710,6 +710,16 @@ pub const Cpu = struct {
         self.setCarryFlag(@as(u32, original_value) + @as(u32, value) > 0xFFFF);
     }
 
+    fn addA(self: *Cpu, value: u8) void {
+        const original_value = self.registers.af.parts.a;
+        self.registers.af.parts.a +%= value;
+
+        self.setZeroFlag(self.registers.af.parts.a == 0);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag((original_value & 0x0F) + (value & 0x0F) > 0x0F);
+        self.setCarryFlag(@as(u16, original_value) + @as(u16, value) > 0xFF);
+    }
+
     fn applyRelativeOffset(self: *Cpu, offset: i8) void {
         const signed_offset = @as(i16, offset);
         const signed_pc = @as(i16, @bitCast(self.registers.pc));
