@@ -598,6 +598,38 @@ pub const Cpu = struct {
                 self.registers.af.parts.a = self.registers.af.parts.a;
                 return 4;
             },
+            0x80 => { // ADD A,B
+                self.addA(self.registers.bc.parts.b);
+                return 4;
+            },
+            0x81 => { // ADD A,C
+                self.addA(self.registers.bc.parts.c);
+                return 4;
+            },
+            0x82 => { // ADD A,D
+                self.addA(self.registers.de.parts.d);
+                return 4;
+            },
+            0x83 => { // ADD A,E
+                self.addA(self.registers.de.parts.e);
+                return 4;
+            },
+            0x84 => { // ADD A,H
+                self.addA(self.registers.hl.parts.h);
+                return 4;
+            },
+            0x85 => { // ADD A,L
+                self.addA(self.registers.hl.parts.l);
+                return 4;
+            },
+            0x86 => { // ADD A,(HL)
+                self.addA(bus.read(self.registers.hl.value));
+                return 8;
+            },
+            0x87 => { // ADD A,A
+                self.addA(self.registers.af.parts.a);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
@@ -718,6 +750,17 @@ pub const Cpu = struct {
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag((original_value & 0x0F) + (value & 0x0F) > 0x0F);
         self.setCarryFlag(@as(u16, original_value) + @as(u16, value) > 0xFF);
+    }
+
+    fn addAWithCarry(self: *Cpu, value: u8) void {
+        const original_value = self.registers.af.parts.a;
+        const carry: u8 = if (self.getCarryFlag()) 1 else 0;
+        self.registers.af.parts.a = original_value +% value +% carry;
+
+        self.setZeroFlag(self.registers.af.parts.a == 0);
+        self.setSubtractionFlag(false);
+        self.setHalfCarryFlag((original_value & 0x0F) + (value & 0x0F) + (carry & 0x0F) > 0x0F);
+        self.setCarryFlag(@as(u16, original_value) + @as(u16, value) + @as(u16, carry) > 0xFF);
     }
 
     fn applyRelativeOffset(self: *Cpu, offset: i8) void {
