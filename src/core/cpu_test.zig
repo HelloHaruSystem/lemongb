@@ -5052,3 +5052,203 @@ test "0x5F LD E,A: consumes 4 T-cycles" {
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
+
+// ---------------------------------------------------------------------------
+// Row 7: 0x60-0x6F  LD r, r' / LD r, (HL)
+// ---------------------------------------------------------------------------
+// Spec: Load register r with value from register r' (or memory at HL).
+//       Register variants: 4 T-cycles, PC+1, flags unaffected.
+//       (HL) variants: 8 T-cycles, PC+1, flags unaffected.
+//
+// The destination register for this row is always H (0x60-0x67)
+// or L (0x68-0x6F).
+//
+// Test strategy: one transfer test per instruction to confirm correct source
+// and destination. Cycle count tested for (HL) variants only (8 vs 4 is the
+// only meaningful variation). Flags and "does not modify source" omitted —
+// proven uniform across the entire LD r,r block.
+
+test "0x60 LD H,B: loads B into H" {
+    var h = Harness.init();
+    h.setB(0xAB);
+    h.setH(0x00);
+    h.load(&.{0x60});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regH());
+}
+
+test "0x61 LD H,C: loads C into H" {
+    var h = Harness.init();
+    h.setC(0xCD);
+    h.setH(0x00);
+    h.load(&.{0x61});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regH());
+}
+
+test "0x62 LD H,D: loads D into H" {
+    var h = Harness.init();
+    h.setD(0x11);
+    h.setH(0x00);
+    h.load(&.{0x62});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regH());
+}
+
+test "0x63 LD H,E: loads E into H" {
+    var h = Harness.init();
+    h.setE(0x22);
+    h.setH(0x00);
+    h.load(&.{0x63});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x22), h.regH());
+}
+
+test "0x64 LD H,H: H is unchanged" {
+    var h = Harness.init();
+    h.setH(0x42);
+    h.load(&.{0x64});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x42), h.regH());
+}
+
+test "0x65 LD H,L: loads L into H" {
+    var h = Harness.init();
+    // Set L without disturbing H via the 16-bit setter
+    h.cpu.registers.hl.parts.l = 0x33;
+    h.cpu.registers.hl.parts.h = 0x00;
+    h.load(&.{0x65});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x33), h.regH());
+}
+
+test "0x66 LD H,(HL): loads byte from address in HL into H" {
+    var h = Harness.init();
+    // HL = 0xC010, mem[0xC010] = 0x55
+    // After: H = 0x55, so HL = 0x5510 (L unchanged)
+    h.setHL(0xC010);
+    h.writeMem(0xC010, 0x55);
+    h.load(&.{0x66});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x55), h.regH());
+}
+
+test "0x66 LD H,(HL): reads address before overwriting H" {
+    var h = Harness.init();
+    // HL = 0xC010 — the address used must be the original HL, not post-write
+    h.setHL(0xC010);
+    h.writeMem(0xC010, 0xAB);
+    h.load(&.{0x66});
+    _ = try h.step();
+    // H should be 0xAB (read from 0xC010), not whatever 0xAB10 holds
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regH());
+}
+
+test "0x66 LD H,(HL): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x66});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x67 LD H,A: loads A into H" {
+    var h = Harness.init();
+    h.setA(0x77);
+    h.setH(0x00);
+    h.load(&.{0x67});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regH());
+}
+
+test "0x68 LD L,B: loads B into L" {
+    var h = Harness.init();
+    h.setB(0xAB);
+    h.setL(0x00);
+    h.load(&.{0x68});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regL());
+}
+
+test "0x69 LD L,C: loads C into L" {
+    var h = Harness.init();
+    h.setC(0xCD);
+    h.setL(0x00);
+    h.load(&.{0x69});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xCD), h.regL());
+}
+
+test "0x6A LD L,D: loads D into L" {
+    var h = Harness.init();
+    h.setD(0x11);
+    h.setL(0x00);
+    h.load(&.{0x6A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x11), h.regL());
+}
+
+test "0x6B LD L,E: loads E into L" {
+    var h = Harness.init();
+    h.setE(0x22);
+    h.setL(0x00);
+    h.load(&.{0x6B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x22), h.regL());
+}
+
+test "0x6C LD L,H: loads H into L" {
+    var h = Harness.init();
+    h.cpu.registers.hl.parts.h = 0x33;
+    h.cpu.registers.hl.parts.l = 0x00;
+    h.load(&.{0x6C});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x33), h.regL());
+}
+
+test "0x6D LD L,L: L is unchanged" {
+    var h = Harness.init();
+    h.setL(0x42);
+    h.load(&.{0x6D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x42), h.regL());
+}
+
+test "0x6E LD L,(HL): loads byte from address in HL into L" {
+    var h = Harness.init();
+    // HL = 0xC000, mem[0xC000] = 0x55
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x55);
+    h.load(&.{0x6E});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x55), h.regL());
+}
+
+test "0x6E LD L,(HL): reads address before overwriting L" {
+    var h = Harness.init();
+    // HL = 0xC010 — address used must be the original HL
+    h.setHL(0xC010);
+    h.writeMem(0xC010, 0xAB);
+    h.load(&.{0x6E});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xAB), h.regL());
+}
+
+test "0x6E LD L,(HL): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x6E});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+test "0x6F LD L,A: loads A into L" {
+    var h = Harness.init();
+    h.setA(0x77);
+    h.setL(0x00);
+    h.load(&.{0x6F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x77), h.regL());
+}
