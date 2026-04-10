@@ -630,6 +630,38 @@ pub const Cpu = struct {
                 self.addA(self.registers.af.parts.a);
                 return 4;
             },
+            0x88 => { // ADC A,B
+                self.addAWithCarry(self.registers.bc.parts.b);
+                return 4;
+            },
+            0x89 => { // ADC A,C
+                self.addAWithCarry(self.registers.bc.parts.c);
+                return 4;
+            },
+            0x8A => { // ADC A,D
+                self.addAWithCarry(self.registers.de.parts.d);
+                return 4;
+            },
+            0x8B => { // ADC A,E
+                self.addAWithCarry(self.registers.de.parts.e);
+                return 4;
+            },
+            0x8C => { // ADC A,H
+                self.addAWithCarry(self.registers.hl.parts.h);
+                return 4;
+            },
+            0x8D => { // ADC A,L
+                self.addAWithCarry(self.registers.hl.parts.l);
+                return 4;
+            },
+            0x8E => { // ADC A,(HL)
+                self.addAWithCarry(bus.read(self.registers.hl.value));
+                return 8;
+            },
+            0x8F => { // ADC A,A
+                self.addAWithCarry(self.registers.af.parts.a);
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
