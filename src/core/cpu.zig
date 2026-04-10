@@ -406,6 +406,70 @@ pub const Cpu = struct {
                 self.registers.bc.parts.c = self.registers.af.parts.a;
                 return 4;
             },
+            0x50 => { // LD D,B
+                self.registers.de.parts.d = self.registers.bc.parts.b;
+                return 4;
+            },
+            0x51 => { // LD D,C
+                self.registers.de.parts.d = self.registers.bc.parts.c;
+                return 4;
+            },
+            0x52 => { // LD D,D
+                self.registers.de.parts.d = self.registers.de.parts.d;
+                return 4;
+            },
+            0x53 => { // LD D,E
+                self.registers.de.parts.d = self.registers.de.parts.e;
+                return 4;
+            },
+            0x54 => { // LD D,H
+                self.registers.de.parts.d = self.registers.hl.parts.h;
+                return 4;
+            },
+            0x55 => { // LD D,L
+                self.registers.de.parts.d = self.registers.hl.parts.l;
+                return 4;
+            },
+            0x56 => { // LD D,(HL)
+                self.registers.de.parts.d = bus.read(self.registers.hl.value);
+                return 8;
+            },
+            0x57 => { // LD D,A
+                self.registers.de.parts.d = self.registers.af.parts.a;
+                return 4;
+            },
+            0x58 => { // LD E,B
+                self.registers.de.parts.e = self.registers.bc.parts.b;
+                return 4;
+            },
+            0x59 => { // LD E,C
+                self.registers.de.parts.e = self.registers.bc.parts.c;
+                return 4;
+            },
+            0x5A => { // LD E,D
+                self.registers.de.parts.e = self.registers.de.parts.d;
+                return 4;
+            },
+            0x5B => { // LD E,E
+                self.registers.de.parts.e = self.registers.de.parts.e;
+                return 4;
+            },
+            0x5C => { // LD E,H
+                self.registers.de.parts.e = self.registers.hl.parts.h;
+                return 4;
+            },
+            0x5D => { // LD E,L
+                self.registers.de.parts.e = self.registers.hl.parts.l;
+                return 4;
+            },
+            0x5E => { // LD E,(HL)
+                self.registers.de.parts.e = bus.read(self.registers.hl.value);
+                return 8;
+            },
+            0x5F => { // LD E,A
+                self.registers.de.parts.e = self.registers.af.parts.a;
+                return 4;
+            },
 
             else => CpuError.UnknownOpcode,
         };
