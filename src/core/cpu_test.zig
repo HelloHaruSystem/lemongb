@@ -5848,3 +5848,392 @@ test "0x8F ADC A,A: carry included in C flag check" {
     _ = try h.step();
     try std.testing.expect(h.flagC());
 }
+
+// ---------------------------------------------------------------------------
+// Row 10: 0x90-0x9F  SUB A,r / SUB A,(HL) / SBC A,r / SBC A,(HL)
+// ---------------------------------------------------------------------------
+// Spec:
+//   SUB A,r:    A = A - r.       Z set if result=0, N set, H set if borrow
+//               from bit 4 (lower nibble), C set if borrow (A < r). 4 T-cycles.
+//   SUB A,(HL): Same but reads from memory. 8 T-cycles.
+//   SBC A,r:    A = A - r - C.   Same flags but carry included in all checks.
+//   SBC A,(HL): Same but reads from memory. 8 T-cycles.
+
+// ---------------------------------------------------------------------------
+// 0x90  SUB A, B  — full flag coverage
+// ---------------------------------------------------------------------------
+
+test "0x90 SUB A,B: subtracts B from A" {
+    var h = Harness.init();
+    h.setA(0x30);
+    h.setB(0x10);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x20), h.regA());
+}
+
+test "0x90 SUB A,B: sets Z when result is 0x00" {
+    var h = Harness.init();
+    h.setA(0x10);
+    h.setB(0x10);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x90 SUB A,B: clears Z when result is non-zero" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 7);
+    h.setA(0x10);
+    h.setB(0x01);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(!h.flagZ());
+}
+
+test "0x90 SUB A,B: always sets N flag" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 6));
+    h.setA(0x10);
+    h.setB(0x01);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x90 SUB A,B: sets H on borrow from bit 4" {
+    var h = Harness.init();
+    h.setA(0x10);
+    h.setB(0x01); // lower nibble: 0x0 < 0x1 -> borrow
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x90 SUB A,B: clears H when no borrow from bit 4" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 5);
+    h.setA(0x0F);
+    h.setB(0x01); // lower nibble: 0xF >= 0x1 -> no borrow
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(!h.flagH());
+}
+
+test "0x90 SUB A,B: sets C when A < B (borrow)" {
+    var h = Harness.init();
+    h.setA(0x00);
+    h.setB(0x01);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x90 SUB A,B: clears C when A >= B" {
+    var h = Harness.init();
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.setA(0x10);
+    h.setB(0x01);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expect(!h.flagC());
+}
+
+test "0x90 SUB A,B: wraps result on underflow" {
+    var h = Harness.init();
+    h.setA(0x00);
+    h.setB(0x01);
+    h.load(&.{0x90});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regA());
+}
+
+test "0x90 SUB A,B: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x90});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x91-0x95  SUB A, r  (transfer tests only — flags proven by 0x90)
+// ---------------------------------------------------------------------------
+
+test "0x91 SUB A,C: subtracts C from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setC(0x10);
+    h.load(&.{0x91});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x10), h.regA());
+}
+
+test "0x92 SUB A,D: subtracts D from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setD(0x10);
+    h.load(&.{0x92});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x10), h.regA());
+}
+
+test "0x93 SUB A,E: subtracts E from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setE(0x10);
+    h.load(&.{0x93});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x10), h.regA());
+}
+
+test "0x94 SUB A,H: subtracts H from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setH(0x10);
+    h.load(&.{0x94});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x10), h.regA());
+}
+
+test "0x95 SUB A,L: subtracts L from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setL(0x10);
+    h.load(&.{0x95});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x10), h.regA());
+}
+
+// ---------------------------------------------------------------------------
+// 0x96  SUB A, (HL)
+// ---------------------------------------------------------------------------
+
+test "0x96 SUB A,(HL): subtracts byte at address in HL from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x10);
+    h.load(&.{0x96});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x10), h.regA());
+}
+
+test "0x96 SUB A,(HL): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x96});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x97  SUB A, A
+// ---------------------------------------------------------------------------
+
+test "0x97 SUB A,A: result is always 0x00" {
+    var h = Harness.init();
+    h.setA(0x42);
+    h.load(&.{0x97});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regA());
+}
+
+test "0x97 SUB A,A: always sets Z" {
+    var h = Harness.init();
+    h.setA(0x42);
+    h.load(&.{0x97});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x97 SUB A,A: never sets C" {
+    var h = Harness.init();
+    h.setA(0x42);
+    h.load(&.{0x97});
+    _ = try h.step();
+    try std.testing.expect(!h.flagC());
+}
+
+// ---------------------------------------------------------------------------
+// 0x98  SBC A, B  — full flag coverage for SBC
+// ---------------------------------------------------------------------------
+
+test "0x98 SBC A,B: subtracts B and carry from A" {
+    var h = Harness.init();
+    h.setA(0x30);
+    h.setB(0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4); // set C
+    h.load(&.{0x98});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x1F), h.regA());
+}
+
+test "0x98 SBC A,B: subtracts B only when carry is clear" {
+    var h = Harness.init();
+    h.setA(0x30);
+    h.setB(0x10);
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
+    h.load(&.{0x98});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x20), h.regA());
+}
+
+test "0x98 SBC A,B: sets Z when result is 0x00" {
+    var h = Harness.init();
+    // 0x10 - 0x0F - carry=1 = 0x00
+    h.setA(0x10);
+    h.setB(0x0F);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x98});
+    _ = try h.step();
+    try std.testing.expect(h.flagZ());
+}
+
+test "0x98 SBC A,B: sets N flag" {
+    var h = Harness.init();
+    h.setA(0x10);
+    h.setB(0x01);
+    h.load(&.{0x98});
+    _ = try h.step();
+    try std.testing.expect(h.flagN());
+}
+
+test "0x98 SBC A,B: sets H when carry tips over bit 4 threshold" {
+    var h = Harness.init();
+    // lower nibble: 0x0 < 0x0 + carry=1 -> borrow
+    h.setA(0x10);
+    h.setB(0x00);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x98});
+    _ = try h.step();
+    try std.testing.expect(h.flagH());
+}
+
+test "0x98 SBC A,B: sets C when carry tips over borrow threshold" {
+    var h = Harness.init();
+    // 0x00 - 0x00 - carry=1 -> borrow
+    h.setA(0x00);
+    h.setB(0x00);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x98});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
+
+test "0x98 SBC A,B: consumes 4 T-cycles" {
+    var h = Harness.init();
+    h.load(&.{0x98});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 4), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x99-0x9D  SBC A, r  (transfer tests only — flags proven by 0x98)
+// ---------------------------------------------------------------------------
+
+test "0x99 SBC A,C: subtracts C and carry from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setC(0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x99});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regA());
+}
+
+test "0x9A SBC A,D: subtracts D and carry from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setD(0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9A});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regA());
+}
+
+test "0x9B SBC A,E: subtracts E and carry from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setE(0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9B});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regA());
+}
+
+test "0x9C SBC A,H: subtracts H and carry from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setH(0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9C});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regA());
+}
+
+test "0x9D SBC A,L: subtracts L and carry from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setL(0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9D});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regA());
+}
+
+// ---------------------------------------------------------------------------
+// 0x9E  SBC A, (HL)
+// ---------------------------------------------------------------------------
+
+test "0x9E SBC A,(HL): subtracts byte at address in HL and carry from A" {
+    var h = Harness.init();
+    h.setA(0x20);
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x10);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9E});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x0F), h.regA());
+}
+
+test "0x9E SBC A,(HL): consumes 8 T-cycles" {
+    var h = Harness.init();
+    h.setHL(0xC000);
+    h.writeMem(0xC000, 0x00);
+    h.load(&.{0x9E});
+    const cycles = try h.step();
+    try std.testing.expectEqual(@as(u8, 8), cycles);
+}
+
+// ---------------------------------------------------------------------------
+// 0x9F  SBC A, A
+// ---------------------------------------------------------------------------
+
+test "0x9F SBC A,A: result is 0x00 when carry is clear" {
+    var h = Harness.init();
+    h.setA(0x42);
+    h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
+    h.load(&.{0x9F});
+    _ = try h.step();
+    try std.testing.expectEqual(@as(u8, 0x00), h.regA());
+}
+
+test "0x9F SBC A,A: result is 0xFF when carry is set" {
+    var h = Harness.init();
+    h.setA(0x42);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9F});
+    _ = try h.step();
+    // A - A - 1 = 0x00 - 0x01 = 0xFF (wrapping)
+    try std.testing.expectEqual(@as(u8, 0xFF), h.regA());
+}
+
+test "0x9F SBC A,A: sets C when carry is set" {
+    var h = Harness.init();
+    h.setA(0x42);
+    h.cpu.registers.af.parts.f |= (1 << 4);
+    h.load(&.{0x9F});
+    _ = try h.step();
+    try std.testing.expect(h.flagC());
+}
