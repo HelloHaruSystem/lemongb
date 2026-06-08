@@ -1,7 +1,7 @@
 const std = @import("std");
 
 // 8MiB max rom size acording to pan docs
-const max_rom_size = 8 * 1024 * 1024;
+const max_rom_size: usize = 8 * 1024 * 1024;
 
 pub const CartridgeError = error{
     RomTooSmall,
@@ -13,8 +13,8 @@ pub const Cartridge = struct {
     rom_data: []u8,
     cartridge_type: u8,
 
-    pub fn init(allocator: std.mem.Allocator, cartridge_path: []const u8) !Cartridge {
-        const rom_contents = try std.fs.cwd().readFileAlloc(allocator, cartridge_path, max_rom_size);
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, cartridge_path: []const u8) !Cartridge {
+        const rom_contents = try std.Io.Dir.cwd().readFileAlloc(io, cartridge_path, allocator, std.Io.Limit.limited(max_rom_size));
 
         // check header length the rom header is from 0x0100—0x014F
         if (rom_contents.len < 0x0150) return CartridgeError.RomTooSmall;

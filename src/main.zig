@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // init and run
-    var cartridge = try Cartridge.init(allocator, path);
+    var cartridge = try Cartridge.init(allocator, io, path);
     var gameboy = Gameboy.init();
     try logger.log(stdout, .debug, "Gameboy initialized!");
 
