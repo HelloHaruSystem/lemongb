@@ -90,7 +90,7 @@ pub const Cpu = struct {
                 return 8;
             },
             0x07 => { // RLCA
-                self.rotateLeftCircular(&self.registers.af.parts.a);
+                self.registers.af.parts.a = self.rotateLeftCircular(self.registers.af.parts.a);
                 return 4;
             },
             0x08 => { // LD (u16), SP
@@ -127,7 +127,7 @@ pub const Cpu = struct {
                 return 8;
             },
             0x0F => { // RRCA
-                self.rotateRightCircular(&self.registers.af.parts.a);
+                self.registers.af.parts.a = self.rotateRightCircular(self.registers.af.parts.a);
                 return 4;
             },
             0x10 => { // STOP
@@ -161,7 +161,7 @@ pub const Cpu = struct {
                 return 8;
             },
             0x17 => { // RLA
-                self.rotateLeftThroughCarry(&self.registers.af.parts.a);
+                self.registers.af.parts.a = self.rotateLeftThroughCarry(self.registers.af.parts.a);
                 return 4;
             },
             0x18 => { // JR i8
@@ -194,7 +194,7 @@ pub const Cpu = struct {
                 return 8;
             },
             0x1F => { // RRA
-                self.rotateRightThroughCarry(&self.registers.af.parts.a);
+                self.registers.af.parts.a = self.rotateRightThroughCarry(self.registers.af.parts.a);
                 return 4;
             },
             0x20 => { // JR NZ, i8
@@ -787,48 +787,56 @@ pub const Cpu = struct {
         return new_value;
     }
 
-    fn rotateLeftCircular(self: *Cpu, register: *u8) void {
-        const old_bit_seven = (register.* >> 7) & 1;
-        register.* = register.* << 1;
-        register.* |= @as(u8, old_bit_seven);
+    fn rotateLeftCircular(self: *Cpu, register: u8) u8 {
+        const old_bit_seven = (register >> 7) & 1;
+        var rotated_seven_bits = register << 1;
+        rotated_seven_bits |= @as(u8, old_bit_seven);
 
         self.setZeroFlag(false);
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag(false);
         self.setCarryFlag(old_bit_seven != 0);
+
+        return rotated_seven_bits;
     }
 
-    fn rotateLeftThroughCarry(self: *Cpu, register: *u8) void {
-        const old_bit_seven = (register.* >> 7) & 1;
-        register.* = register.* << 1;
-        register.* |= if (self.getCarryFlag()) @as(u8, 1) else @as(u8, 0);
+    fn rotateLeftThroughCarry(self: *Cpu, register: u8) u8 {
+        const old_bit_seven = (register >> 7) & 1;
+        var rotated_seven_bits = register << 1;
+        rotated_seven_bits |= if (self.getCarryFlag()) @as(u8, 1) else @as(u8, 0);
 
         self.setZeroFlag(false);
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag(false);
         self.setCarryFlag(old_bit_seven != 0);
+
+        return rotated_seven_bits;
     }
 
-    fn rotateRightCircular(self: *Cpu, register: *u8) void {
-        const old_bit_zero = register.* & 1;
-        register.* = register.* >> 1;
-        register.* |= (old_bit_zero << 7);
+    fn rotateRightCircular(self: *Cpu, register: u8) u8 {
+        const old_bit_zero = register & 1;
+        var rotated_seven_bits = register >> 1;
+        rotated_seven_bits |= (old_bit_zero << 7);
 
         self.setZeroFlag(false);
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag(false);
         self.setCarryFlag(old_bit_zero != 0);
+
+        return rotated_seven_bits;
     }
 
-    fn rotateRightThroughCarry(self: *Cpu, register: *u8) void {
-        const old_bit_zero = register.* & 1;
-        register.* = register.* >> 1;
-        register.* |= if (self.getCarryFlag()) @as(u8, (1 << 7)) else @as(u8, (0));
+    fn rotateRightThroughCarry(self: *Cpu, register: u8) u8 {
+        const old_bit_zero = register & 1;
+        var rotated_seven_bits = register >> 1;
+        rotated_seven_bits |= if (self.getCarryFlag()) @as(u8, (1 << 7)) else @as(u8, (0));
 
         self.setZeroFlag(false);
         self.setSubtractionFlag(false);
         self.setHalfCarryFlag(false);
         self.setCarryFlag(old_bit_zero != 0);
+
+        return rotated_seven_bits;
     }
 
     fn addHL(self: *Cpu, value: u16) void {
