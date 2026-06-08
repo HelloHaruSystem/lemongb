@@ -3,15 +3,18 @@ const Logger = @import("debug/logger.zig").Logger;
 const Cartridge = @import("core/cartridge.zig").Cartridge;
 const Gameboy = @import("core/gameboy.zig").Gameboy;
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     // allocator setup
     const page_allocator = std.heap.page_allocator;
     var arena = std.heap.ArenaAllocator.init(page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    // Io interface
+    const io = init.io;
+
     // parse args
-    var args = try std.process.argsWithAllocator(allocator);
+    var args = init.minimal.args.iterate();
     defer args.deinit();
     _ = args.skip();
 
@@ -28,7 +31,7 @@ pub fn main() !void {
 
     // stdout setup
     var write_buffer: [4096]u8 = undefined;
-    var stdout_w = std.fs.File.stdout().writer(&write_buffer);
+    var stdout_w = std.Io.File.stdout().writer(io, &write_buffer);
     const stdout = &stdout_w.interface;
 
     // logger
@@ -43,12 +46,12 @@ pub fn main() !void {
 
     // setup trace writer if needed
     var trace_writer: ?*std.Io.Writer = null;
-    var trace_w: std.fs.File.Writer = undefined;
+    var trace_w: std.Io.File.Writer = undefined;
     var trace_buffer: [128]u8 = undefined;
     if (trace_enabled) {
-        try std.fs.cwd().makePath("logs");
-        const trace_file = try std.fs.cwd().createFile("logs/trace", .{ .truncate = true });
-        trace_w = trace_file.writer(&trace_buffer);
+        try std.Io.Dir.cwd().createDirPath(io, "logs");
+        const trace_file = try std.Io.Dir.cwd().createFile(io, "logs/trace", .{ .truncate = true });
+        trace_w = trace_file.writer(io, &trace_buffer);
         trace_writer = &trace_w.interface;
     }
 
