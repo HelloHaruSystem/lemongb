@@ -78,11 +78,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x04 => { // INC B
-                self.increment8(&self.registers.bc.parts.b);
+                self.registers.bc.parts.b = self.increment8(self.registers.bc.parts.b);
                 return 4;
             },
             0x05 => { // DEC B
-                self.decrement8(&self.registers.bc.parts.b);
+                self.registers.bc.parts.b = self.decrement8(self.registers.bc.parts.b);
                 return 4;
             },
             0x06 => { // LD B, u8
@@ -115,11 +115,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x0C => { // INC C
-                self.increment8(&self.registers.bc.parts.c);
+                self.registers.bc.parts.c = self.increment8(self.registers.bc.parts.c);
                 return 4;
             },
             0x0D => { // DEC C
-                self.decrement8(&self.registers.bc.parts.c);
+                self.registers.bc.parts.c = self.decrement8(self.registers.bc.parts.c);
                 return 4;
             },
             0x0E => { // LD C,u8
@@ -149,11 +149,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x14 => { // INC D
-                self.increment8(&self.registers.de.parts.d);
+                self.registers.de.parts.d = self.increment8(self.registers.de.parts.d);
                 return 4;
             },
             0x15 => { // DEC D
-                self.decrement8(&self.registers.de.parts.d);
+                self.registers.de.parts.d = self.decrement8(self.registers.de.parts.d);
                 return 4;
             },
             0x16 => { // LD D,u8
@@ -182,11 +182,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x1C => { // INC E
-                self.increment8(&self.registers.de.parts.e);
+                self.registers.de.parts.e = self.increment8(self.registers.de.parts.e);
                 return 4;
             },
             0x1D => { // DEC E
-                self.decrement8(&self.registers.de.parts.e);
+                self.registers.de.parts.e = self.decrement8(self.registers.de.parts.e);
                 return 4;
             },
             0x1E => { // LD E,u8
@@ -216,11 +216,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x24 => { // INC H
-                self.increment8(&self.registers.hl.parts.h);
+                self.registers.hl.parts.h = self.increment8(self.registers.hl.parts.h);
                 return 4;
             },
             0x25 => { // DEC H
-                self.decrement8(&self.registers.hl.parts.h);
+                self.registers.hl.parts.h = self.decrement8(self.registers.hl.parts.h);
                 return 4;
             },
             0x26 => { // LD H,u8
@@ -249,11 +249,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x2C => { // INC L
-                self.increment8(&self.registers.hl.parts.l);
+                self.registers.hl.parts.l = self.increment8(self.registers.hl.parts.l);
                 return 4;
             },
             0x2D => { // DEC L
-                self.decrement8(&self.registers.hl.parts.l);
+                self.registers.hl.parts.l = self.decrement8(self.registers.hl.parts.l);
                 return 4;
             },
             0x2E => { // LD L,u8
@@ -286,15 +286,15 @@ pub const Cpu = struct {
                 return 8;
             },
             0x34 => { // INC (HL)
-                var value = bus.read(self.registers.hl.value);
-                self.increment8(&value);
-                bus.write(self.registers.hl.value, value);
+                const value = bus.read(self.registers.hl.value);
+                const new_value = self.increment8(value);
+                bus.write(self.registers.hl.value, new_value);
                 return 12;
             },
             0x35 => { // DEC (HL)
-                var value = bus.read(self.registers.hl.value);
-                self.decrement8(&value);
-                bus.write(self.registers.hl.value, value);
+                const value = bus.read(self.registers.hl.value);
+                const new_value = self.decrement8(value);
+                bus.write(self.registers.hl.value, new_value);
                 return 12;
             },
             0x36 => { // LD (HL),u8
@@ -325,11 +325,11 @@ pub const Cpu = struct {
                 return 8;
             },
             0x3C => { // INC A
-                self.increment8(&self.registers.af.parts.a);
+                self.registers.af.parts.a = self.increment8(self.registers.af.parts.a);
                 return 4;
             },
             0x3D => { // DEC A
-                self.decrement8(&self.registers.af.parts.a);
+                self.registers.af.parts.a = self.decrement8(self.registers.af.parts.a);
                 return 4;
             },
             0x3E => { // LD A,u8
@@ -767,22 +767,24 @@ pub const Cpu = struct {
         return (@as(u16, high) << 8) | @as(u16, low);
     }
 
-    fn increment8(self: *Cpu, value: *u8) void {
-        const original_value = value.*;
-        value.* +%= 1;
+    fn increment8(self: *Cpu, value: u8) u8 {
+        const new_value = value +% 1;
 
-        self.setZeroFlag(value.* == 0);
+        self.setZeroFlag(new_value == 0);
         self.setSubtractionFlag(false);
-        self.setHalfCarryFlag((original_value & 0x0F) == 0x0F);
+        self.setHalfCarryFlag((value & 0x0F) == 0x0F);
+
+        return new_value;
     }
 
-    fn decrement8(self: *Cpu, value: *u8) void {
-        const original_value = value.*;
-        value.* -%= 1;
+    fn decrement8(self: *Cpu, value: u8) u8 {
+        const new_value = value -% 1;
 
-        self.setZeroFlag(value.* == 0);
+        self.setZeroFlag(new_value == 0);
         self.setSubtractionFlag(true);
-        self.setHalfCarryFlag((original_value & 0x0F) == 0x00);
+        self.setHalfCarryFlag((value & 0x0F) == 0x00);
+
+        return new_value;
     }
 
     fn rotateLeftCircular(self: *Cpu, register: *u8) void {
