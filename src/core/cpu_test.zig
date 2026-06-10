@@ -1,6 +1,7 @@
 const std = @import("std");
 const Cpu = @import("cpu.zig").Cpu;
 const Bus = @import("bus.zig").Bus;
+const Cartridge = @import("cartridge.zig").Cartridge;
 
 // ---------------------------------------------------------------------------
 // AI generated!
@@ -18,16 +19,22 @@ const Bus = @import("bus.zig").Bus;
 //   - The harness itself has no knowledge of opcode encodings beyond what it
 //     writes into memory — the CPU under test does all decoding.
 
+/// Create a fresh harness. Registers are in the post-boot-ROM DMG state.
 const Harness = struct {
     cpu: Cpu,
     bus: Bus,
+    rom: [0x8000]u8,
+    cartridge: Cartridge,
 
-    /// Create a fresh harness. Registers are in the post-boot-ROM DMG state.
-    pub fn init() Harness {
-        return .{
-            .cpu = Cpu.init(),
-            .bus = Bus.init(),
+    pub fn init(self: *Harness) void {
+        self.cpu = Cpu.init();
+        self.bus = Bus.init();
+        self.rom = [_]u8{0} ** 0x8000;
+        self.cartridge = Cartridge{
+            .rom_data = &self.rom,
+            .cartridge_type = .rom_only,
         };
+        self.bus.loadCartridge(&self.cartridge);
     }
 
     /// Write a sequence of bytes into ROM starting at 0x0100 (where PC starts).
@@ -35,7 +42,7 @@ const Harness = struct {
         for (bytes, 0..) |byte, i| {
             // Bypass the read-only guard by writing directly to memory.
             // This is intentional: we are loading test ROM data.
-            self.bus.memory[0x0100 + i] = byte;
+            self.rom[0x0100 + i] = byte;
         }
     }
 
@@ -160,7 +167,8 @@ const Harness = struct {
 // ---------------------------------------------------------------------------
 
 test "0x00 NOP: consumes 4 T-cycles and advances PC by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x00});
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -169,7 +177,8 @@ test "0x00 NOP: consumes 4 T-cycles and advances PC by 1" {
 }
 
 test "0x00 NOP: does not alter any register" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x00});
     const a = h.regA();
     const f = h.regF();
@@ -191,7 +200,8 @@ test "0x00 NOP: does not alter any register" {
 // ---------------------------------------------------------------------------
 
 test "0x01 LD BC,u16: loads immediate little-endian u16 into BC" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x01 lo hi  ->  BC = (hi << 8) | lo
     h.load(&.{ 0x01, 0x34, 0x12 });
     _ = try h.step();
@@ -199,7 +209,8 @@ test "0x01 LD BC,u16: loads immediate little-endian u16 into BC" {
 }
 
 test "0x01 LD BC,u16: low byte goes into C, high byte into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x01, 0xAB, 0xCD });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regC());
@@ -207,7 +218,8 @@ test "0x01 LD BC,u16: low byte goes into C, high byte into B" {
 }
 
 test "0x01 LD BC,u16: consumes 12 T-cycles and advances PC by 3" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x01, 0x00, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -216,7 +228,8 @@ test "0x01 LD BC,u16: consumes 12 T-cycles and advances PC by 3" {
 }
 
 test "0x01 LD BC,u16: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x01, 0xFF, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -224,14 +237,16 @@ test "0x01 LD BC,u16: does not affect flags" {
 }
 
 test "0x01 LD BC,u16: edge case 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x01, 0x00, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x0000), h.regBC());
 }
 
 test "0x01 LD BC,u16: edge case 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x01, 0xFF, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0xFFFF), h.regBC());
@@ -242,7 +257,8 @@ test "0x01 LD BC,u16: edge case 0xFFFF" {
 // ---------------------------------------------------------------------------
 
 test "0x02 LD (BC),A: writes A to memory address in BC" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000); // work RAM — writable
     h.setA(0x42);
     h.load(&.{0x02});
@@ -251,7 +267,8 @@ test "0x02 LD (BC),A: writes A to memory address in BC" {
 }
 
 test "0x02 LD (BC),A: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.setA(0x01);
     h.load(&.{0x02});
@@ -260,7 +277,8 @@ test "0x02 LD (BC),A: consumes 8 T-cycles" {
 }
 
 test "0x02 LD (BC),A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.setA(0xFF);
     h.load(&.{0x02});
@@ -270,7 +288,8 @@ test "0x02 LD (BC),A: does not affect flags" {
 }
 
 test "0x02 LD (BC),A: does not modify BC" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.setA(0x01);
     h.load(&.{0x02});
@@ -283,7 +302,8 @@ test "0x02 LD (BC),A: does not modify BC" {
 // ---------------------------------------------------------------------------
 
 test "0x03 INC BC: increments BC by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0x0000);
     h.load(&.{0x03});
     _ = try h.step();
@@ -291,7 +311,8 @@ test "0x03 INC BC: increments BC by 1" {
 }
 
 test "0x03 INC BC: wraps from 0xFFFF to 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xFFFF);
     h.load(&.{0x03});
     _ = try h.step();
@@ -299,14 +320,16 @@ test "0x03 INC BC: wraps from 0xFFFF to 0x0000" {
 }
 
 test "0x03 INC BC: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x03});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
 }
 
 test "0x03 INC BC: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xFFFF); // worst case — would set flags if it were 8-bit
     h.load(&.{0x03});
     const f_before = h.regF();
@@ -319,7 +342,8 @@ test "0x03 INC BC: does not affect flags" {
 // ---------------------------------------------------------------------------
 
 test "0x04 INC B: increments B by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x00);
     h.load(&.{0x04});
     _ = try h.step();
@@ -327,7 +351,8 @@ test "0x04 INC B: increments B by 1" {
 }
 
 test "0x04 INC B: sets Z when result is 0x00 (wrap from 0xFF)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xFF);
     h.load(&.{0x04});
     _ = try h.step();
@@ -336,7 +361,8 @@ test "0x04 INC B: sets Z when result is 0x00 (wrap from 0xFF)" {
 }
 
 test "0x04 INC B: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x00);
     h.load(&.{0x04});
     _ = try h.step();
@@ -344,7 +370,8 @@ test "0x04 INC B: clears Z when result is non-zero" {
 }
 
 test "0x04 INC B: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x10);
     h.load(&.{0x04});
     _ = try h.step();
@@ -352,7 +379,8 @@ test "0x04 INC B: clears N flag" {
 }
 
 test "0x04 INC B: sets H when lower nibble wraps (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x0F);
     h.load(&.{0x04});
     _ = try h.step();
@@ -360,7 +388,8 @@ test "0x04 INC B: sets H when lower nibble wraps (0x0F -> 0x10)" {
 }
 
 test "0x04 INC B: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x00);
     h.load(&.{0x04});
     _ = try h.step();
@@ -368,7 +397,8 @@ test "0x04 INC B: clears H when lower nibble does not wrap" {
 }
 
 test "0x04 INC B: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Force C set before the instruction
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.setB(0xFF);
@@ -378,7 +408,8 @@ test "0x04 INC B: does not affect C flag" {
 }
 
 test "0x04 INC B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x04});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -389,7 +420,8 @@ test "0x04 INC B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x05 DEC B: decrements B by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x10);
     h.load(&.{0x05});
     _ = try h.step();
@@ -397,7 +429,8 @@ test "0x05 DEC B: decrements B by 1" {
 }
 
 test "0x05 DEC B: wraps from 0x00 to 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x00);
     h.load(&.{0x05});
     _ = try h.step();
@@ -405,7 +438,8 @@ test "0x05 DEC B: wraps from 0x00 to 0xFF" {
 }
 
 test "0x05 DEC B: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x01);
     h.load(&.{0x05});
     _ = try h.step();
@@ -413,7 +447,8 @@ test "0x05 DEC B: sets Z when result is 0x00" {
 }
 
 test "0x05 DEC B: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x05);
     h.load(&.{0x05});
     _ = try h.step();
@@ -421,7 +456,8 @@ test "0x05 DEC B: clears Z when result is non-zero" {
 }
 
 test "0x05 DEC B: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x10);
     h.load(&.{0x05});
     _ = try h.step();
@@ -429,7 +465,8 @@ test "0x05 DEC B: sets N flag" {
 }
 
 test "0x05 DEC B: sets H when lower nibble borrows (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x10);
     h.load(&.{0x05});
     _ = try h.step();
@@ -437,7 +474,8 @@ test "0x05 DEC B: sets H when lower nibble borrows (0x10 -> 0x0F)" {
 }
 
 test "0x05 DEC B: clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x0F);
     h.load(&.{0x05});
     _ = try h.step();
@@ -445,7 +483,8 @@ test "0x05 DEC B: clears H when no borrow from upper nibble" {
 }
 
 test "0x05 DEC B: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setB(0x00);
     h.load(&.{0x05});
@@ -454,7 +493,8 @@ test "0x05 DEC B: does not affect C flag" {
 }
 
 test "0x05 DEC B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x05});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -465,28 +505,32 @@ test "0x05 DEC B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x06 LD B,u8: loads immediate byte into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x06, 0xBE });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xBE), h.regB());
 }
 
 test "0x06 LD B,u8: edge case 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x06, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0x00), h.regB());
 }
 
 test "0x06 LD B,u8: edge case 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x06, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xFF), h.regB());
 }
 
 test "0x06 LD B,u8: consumes 8 T-cycles and advances PC by 2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x06, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -495,7 +539,8 @@ test "0x06 LD B,u8: consumes 8 T-cycles and advances PC by 2" {
 }
 
 test "0x06 LD B,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x06, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -507,7 +552,8 @@ test "0x06 LD B,u8: does not affect flags" {
 // ---------------------------------------------------------------------------
 
 test "0x07 RLCA: bit 7 wraps into bit 0" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b10000000); // bit 7 set, all others clear
     h.load(&.{0x07});
     _ = try h.step();
@@ -516,7 +562,8 @@ test "0x07 RLCA: bit 7 wraps into bit 0" {
 }
 
 test "0x07 RLCA: bit 7 is copied into C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b10000001);
     h.load(&.{0x07});
     _ = try h.step();
@@ -524,7 +571,8 @@ test "0x07 RLCA: bit 7 is copied into C flag" {
 }
 
 test "0x07 RLCA: C flag cleared when bit 7 was 0" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b01000000);
     h.load(&.{0x07});
     _ = try h.step();
@@ -532,7 +580,8 @@ test "0x07 RLCA: C flag cleared when bit 7 was 0" {
 }
 
 test "0x07 RLCA: Z flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Even if result is 0x00 (impossible for RLCA since bit wraps), Z=0
     h.setA(0x00);
     h.load(&.{0x07});
@@ -541,7 +590,8 @@ test "0x07 RLCA: Z flag always cleared" {
 }
 
 test "0x07 RLCA: N flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x07});
     _ = try h.step();
@@ -549,7 +599,8 @@ test "0x07 RLCA: N flag always cleared" {
 }
 
 test "0x07 RLCA: H flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x07});
     _ = try h.step();
@@ -557,7 +608,8 @@ test "0x07 RLCA: H flag always cleared" {
 }
 
 test "0x07 RLCA: all bits rotate correctly (0b11001010 -> 0b10010101)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b11001010);
     h.load(&.{0x07});
     _ = try h.step();
@@ -565,7 +617,8 @@ test "0x07 RLCA: all bits rotate correctly (0b11001010 -> 0b10010101)" {
 }
 
 test "0x07 RLCA: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x07});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -576,7 +629,8 @@ test "0x07 RLCA: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x08 LD (u16),SP: writes SP low byte at address, high byte at address+1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0xABCD);
     // Store to work RAM at 0xC100
     h.load(&.{ 0x08, 0x00, 0xC1 }); // little-endian address 0xC100
@@ -586,7 +640,8 @@ test "0x08 LD (u16),SP: writes SP low byte at address, high byte at address+1" {
 }
 
 test "0x08 LD (u16),SP: consumes 20 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0x1234);
     h.load(&.{ 0x08, 0x00, 0xC1 });
     const cycles = try h.step();
@@ -594,7 +649,8 @@ test "0x08 LD (u16),SP: consumes 20 T-cycles" {
 }
 
 test "0x08 LD (u16),SP: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0xFFFF);
     h.load(&.{ 0x08, 0x00, 0xC1 });
     const f_before = h.regF();
@@ -603,7 +659,8 @@ test "0x08 LD (u16),SP: does not affect flags" {
 }
 
 test "0x08 LD (u16),SP: does not modify SP" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0x1234);
     h.load(&.{ 0x08, 0x00, 0xC1 });
     _ = try h.step();
@@ -615,7 +672,8 @@ test "0x08 LD (u16),SP: does not modify SP" {
 // ---------------------------------------------------------------------------
 
 test "0x09 ADD HL,BC: adds BC to HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0100);
     h.setBC(0x0200);
     h.load(&.{0x09});
@@ -624,7 +682,8 @@ test "0x09 ADD HL,BC: adds BC to HL" {
 }
 
 test "0x09 ADD HL,BC: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.setBC(0x0001);
     h.load(&.{0x09});
@@ -633,7 +692,8 @@ test "0x09 ADD HL,BC: clears N flag" {
 }
 
 test "0x09 ADD HL,BC: sets C on overflow past 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     h.setBC(0x0001);
     h.load(&.{0x09});
@@ -642,7 +702,8 @@ test "0x09 ADD HL,BC: sets C on overflow past 0xFFFF" {
 }
 
 test "0x09 ADD HL,BC: clears C when no overflow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.setBC(0x0001);
     h.load(&.{0x09});
@@ -651,7 +712,8 @@ test "0x09 ADD HL,BC: clears C when no overflow" {
 }
 
 test "0x09 ADD HL,BC: sets H on carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0FFF);
     h.setBC(0x0001);
     h.load(&.{0x09});
@@ -660,7 +722,8 @@ test "0x09 ADD HL,BC: sets H on carry from bit 11" {
 }
 
 test "0x09 ADD HL,BC: clears H when no carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0100);
     h.setBC(0x0100);
     h.load(&.{0x09});
@@ -669,7 +732,8 @@ test "0x09 ADD HL,BC: clears H when no carry from bit 11" {
 }
 
 test "0x09 ADD HL,BC: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Force Z set
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.setHL(0xFFFF);
@@ -680,7 +744,8 @@ test "0x09 ADD HL,BC: does not affect Z flag" {
 }
 
 test "0x09 ADD HL,BC: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x09});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -691,7 +756,8 @@ test "0x09 ADD HL,BC: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x0A LD A,(BC): loads byte from address in BC into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.writeMem(0xC000, 0x77);
     h.load(&.{0x0A});
@@ -700,7 +766,8 @@ test "0x0A LD A,(BC): loads byte from address in BC into A" {
 }
 
 test "0x0A LD A,(BC): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x0A});
@@ -709,7 +776,8 @@ test "0x0A LD A,(BC): consumes 8 T-cycles" {
 }
 
 test "0x0A LD A,(BC): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x0A});
@@ -719,7 +787,8 @@ test "0x0A LD A,(BC): does not affect flags" {
 }
 
 test "0x0A LD A,(BC): does not modify BC" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0xC000);
     h.writeMem(0xC000, 0x01);
     h.load(&.{0x0A});
@@ -732,7 +801,8 @@ test "0x0A LD A,(BC): does not modify BC" {
 // ---------------------------------------------------------------------------
 
 test "0x0B DEC BC: decrements BC by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0x0010);
     h.load(&.{0x0B});
     _ = try h.step();
@@ -740,7 +810,8 @@ test "0x0B DEC BC: decrements BC by 1" {
 }
 
 test "0x0B DEC BC: wraps from 0x0000 to 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0x0000);
     h.load(&.{0x0B});
     _ = try h.step();
@@ -748,7 +819,8 @@ test "0x0B DEC BC: wraps from 0x0000 to 0xFFFF" {
 }
 
 test "0x0B DEC BC: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setBC(0x0000);
     h.load(&.{0x0B});
     const f_before = h.regF();
@@ -757,7 +829,8 @@ test "0x0B DEC BC: does not affect flags" {
 }
 
 test "0x0B DEC BC: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x0B});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -768,7 +841,8 @@ test "0x0B DEC BC: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x0C INC C: increments C by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x10);
     h.load(&.{0x0C});
     _ = try h.step();
@@ -776,7 +850,8 @@ test "0x0C INC C: increments C by 1" {
 }
 
 test "0x0C INC C: sets Z when result wraps to 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xFF);
     h.load(&.{0x0C});
     _ = try h.step();
@@ -784,7 +859,8 @@ test "0x0C INC C: sets Z when result wraps to 0x00" {
 }
 
 test "0x0C INC C: sets H on lower nibble wrap (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x0F);
     h.load(&.{0x0C});
     _ = try h.step();
@@ -792,7 +868,8 @@ test "0x0C INC C: sets H on lower nibble wrap (0x0F -> 0x10)" {
 }
 
 test "0x0C INC C: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x01);
     h.load(&.{0x0C});
     _ = try h.step();
@@ -800,7 +877,8 @@ test "0x0C INC C: clears N flag" {
 }
 
 test "0x0C INC C: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Pre-set Z to confirm it gets cleared
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.setC(0x00);
@@ -810,7 +888,8 @@ test "0x0C INC C: clears Z when result is non-zero" {
 }
 
 test "0x0C INC C: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setC(0x00);
     h.load(&.{0x0C});
@@ -819,7 +898,8 @@ test "0x0C INC C: clears H when lower nibble does not wrap" {
 }
 
 test "0x0C INC C: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setC(0xFF);
     h.load(&.{0x0C});
@@ -832,7 +912,8 @@ test "0x0C INC C: does not affect C flag" {
 // ---------------------------------------------------------------------------
 
 test "0x0D DEC C: decrements C by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x10);
     h.load(&.{0x0D});
     _ = try h.step();
@@ -840,7 +921,8 @@ test "0x0D DEC C: decrements C by 1" {
 }
 
 test "0x0D DEC C: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x01);
     h.load(&.{0x0D});
     _ = try h.step();
@@ -848,7 +930,8 @@ test "0x0D DEC C: sets Z when result is 0x00" {
 }
 
 test "0x0D DEC C: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x05);
     h.load(&.{0x0D});
     _ = try h.step();
@@ -856,7 +939,8 @@ test "0x0D DEC C: sets N flag" {
 }
 
 test "0x0D DEC C: sets H on borrow from upper nibble (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x10);
     h.load(&.{0x0D});
     _ = try h.step();
@@ -864,7 +948,8 @@ test "0x0D DEC C: sets H on borrow from upper nibble (0x10 -> 0x0F)" {
 }
 
 test "0x0D DEC C: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setC(0x05);
     h.load(&.{0x0D});
@@ -873,7 +958,8 @@ test "0x0D DEC C: clears Z when result is non-zero" {
 }
 
 test "0x0D DEC C: clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setC(0x0F);
     h.load(&.{0x0D});
@@ -882,7 +968,8 @@ test "0x0D DEC C: clears H when no borrow from upper nibble" {
 }
 
 test "0x0D DEC C: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setC(0x00);
     h.load(&.{0x0D});
@@ -895,14 +982,16 @@ test "0x0D DEC C: does not affect C flag" {
 // ---------------------------------------------------------------------------
 
 test "0x0E LD C,u8: loads immediate byte into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x0E, 0xAB });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regC());
 }
 
 test "0x0E LD C,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x0E, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -910,7 +999,8 @@ test "0x0E LD C,u8: does not affect flags" {
 }
 
 test "0x0E LD C,u8: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x0E, 0x00 });
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -921,7 +1011,8 @@ test "0x0E LD C,u8: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x0F RRCA: bit 0 wraps into bit 7" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000001); // only bit 0 set
     h.load(&.{0x0F});
     _ = try h.step();
@@ -930,7 +1021,8 @@ test "0x0F RRCA: bit 0 wraps into bit 7" {
 }
 
 test "0x0F RRCA: bit 0 is copied into C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000001);
     h.load(&.{0x0F});
     _ = try h.step();
@@ -938,7 +1030,8 @@ test "0x0F RRCA: bit 0 is copied into C flag" {
 }
 
 test "0x0F RRCA: C flag cleared when bit 0 was 0" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b10000000);
     h.load(&.{0x0F});
     _ = try h.step();
@@ -946,7 +1039,8 @@ test "0x0F RRCA: C flag cleared when bit 0 was 0" {
 }
 
 test "0x0F RRCA: Z flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.load(&.{0x0F});
     _ = try h.step();
@@ -954,7 +1048,8 @@ test "0x0F RRCA: Z flag always cleared" {
 }
 
 test "0x0F RRCA: N flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x0F});
     _ = try h.step();
@@ -962,7 +1057,8 @@ test "0x0F RRCA: N flag always cleared" {
 }
 
 test "0x0F RRCA: H flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x0F});
     _ = try h.step();
@@ -970,7 +1066,8 @@ test "0x0F RRCA: H flag always cleared" {
 }
 
 test "0x0F RRCA: all bits rotate correctly (0b11001010 -> 0b01100101)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b11001010);
     h.load(&.{0x0F});
     _ = try h.step();
@@ -978,7 +1075,8 @@ test "0x0F RRCA: all bits rotate correctly (0b11001010 -> 0b01100101)" {
 }
 
 test "0x0F RRCA: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x0F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -1004,14 +1102,16 @@ test "0x0F RRCA: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x10 STOP: returns NotYetSupportedOpcode error" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x10, 0x00 });
     const result = h.step();
     try std.testing.expectError(error.NotYetSupportedOpcode, result);
 }
 
 test "0x10 STOP: advances PC past both bytes before erroring" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x10, 0x00 });
     const pc_before = h.regPC();
     _ = h.step() catch {};
@@ -1023,14 +1123,16 @@ test "0x10 STOP: advances PC past both bytes before erroring" {
 // ---------------------------------------------------------------------------
 
 test "0x11 LD DE,u16: loads immediate little-endian u16 into DE" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x11, 0x34, 0x12 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x1234), h.regDE());
 }
 
 test "0x11 LD DE,u16: low byte goes into E, high byte into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x11, 0xAB, 0xCD });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regE());
@@ -1038,7 +1140,8 @@ test "0x11 LD DE,u16: low byte goes into E, high byte into D" {
 }
 
 test "0x11 LD DE,u16: consumes 12 T-cycles and advances PC by 3" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x11, 0x00, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -1047,7 +1150,8 @@ test "0x11 LD DE,u16: consumes 12 T-cycles and advances PC by 3" {
 }
 
 test "0x11 LD DE,u16: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x11, 0xFF, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -1055,14 +1159,16 @@ test "0x11 LD DE,u16: does not affect flags" {
 }
 
 test "0x11 LD DE,u16: edge case 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x11, 0x00, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x0000), h.regDE());
 }
 
 test "0x11 LD DE,u16: edge case 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x11, 0xFF, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0xFFFF), h.regDE());
@@ -1073,7 +1179,8 @@ test "0x11 LD DE,u16: edge case 0xFFFF" {
 // ---------------------------------------------------------------------------
 
 test "0x12 LD (DE),A: writes A to memory address in DE" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.setA(0x42);
     h.load(&.{0x12});
@@ -1082,7 +1189,8 @@ test "0x12 LD (DE),A: writes A to memory address in DE" {
 }
 
 test "0x12 LD (DE),A: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.setA(0x01);
     h.load(&.{0x12});
@@ -1091,7 +1199,8 @@ test "0x12 LD (DE),A: consumes 8 T-cycles" {
 }
 
 test "0x12 LD (DE),A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.setA(0xFF);
     h.load(&.{0x12});
@@ -1101,7 +1210,8 @@ test "0x12 LD (DE),A: does not affect flags" {
 }
 
 test "0x12 LD (DE),A: does not modify DE" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.setA(0x01);
     h.load(&.{0x12});
@@ -1114,7 +1224,8 @@ test "0x12 LD (DE),A: does not modify DE" {
 // ---------------------------------------------------------------------------
 
 test "0x13 INC DE: increments DE by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0x0000);
     h.load(&.{0x13});
     _ = try h.step();
@@ -1122,7 +1233,8 @@ test "0x13 INC DE: increments DE by 1" {
 }
 
 test "0x13 INC DE: wraps from 0xFFFF to 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xFFFF);
     h.load(&.{0x13});
     _ = try h.step();
@@ -1130,7 +1242,8 @@ test "0x13 INC DE: wraps from 0xFFFF to 0x0000" {
 }
 
 test "0x13 INC DE: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xFFFF);
     h.load(&.{0x13});
     const f_before = h.regF();
@@ -1139,7 +1252,8 @@ test "0x13 INC DE: does not affect flags" {
 }
 
 test "0x13 INC DE: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x13});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -1150,7 +1264,8 @@ test "0x13 INC DE: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x14 INC D: increments D by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x00);
     h.load(&.{0x14});
     _ = try h.step();
@@ -1158,7 +1273,8 @@ test "0x14 INC D: increments D by 1" {
 }
 
 test "0x14 INC D: sets Z when result wraps to 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0xFF);
     h.load(&.{0x14});
     _ = try h.step();
@@ -1166,7 +1282,8 @@ test "0x14 INC D: sets Z when result wraps to 0x00" {
 }
 
 test "0x14 INC D: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x00);
     h.load(&.{0x14});
     _ = try h.step();
@@ -1174,7 +1291,8 @@ test "0x14 INC D: clears Z when result is non-zero" {
 }
 
 test "0x14 INC D: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x10);
     h.load(&.{0x14});
     _ = try h.step();
@@ -1182,7 +1300,8 @@ test "0x14 INC D: clears N flag" {
 }
 
 test "0x14 INC D: sets H when lower nibble wraps (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x0F);
     h.load(&.{0x14});
     _ = try h.step();
@@ -1190,7 +1309,8 @@ test "0x14 INC D: sets H when lower nibble wraps (0x0F -> 0x10)" {
 }
 
 test "0x14 INC D: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x00);
     h.load(&.{0x14});
     _ = try h.step();
@@ -1198,7 +1318,8 @@ test "0x14 INC D: clears H when lower nibble does not wrap" {
 }
 
 test "0x14 INC D: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.setD(0xFF);
     h.load(&.{0x14});
@@ -1207,7 +1328,8 @@ test "0x14 INC D: does not affect C flag" {
 }
 
 test "0x14 INC D: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x14});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -1218,7 +1340,8 @@ test "0x14 INC D: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x15 DEC D: decrements D by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x10);
     h.load(&.{0x15});
     _ = try h.step();
@@ -1226,7 +1349,8 @@ test "0x15 DEC D: decrements D by 1" {
 }
 
 test "0x15 DEC D: wraps from 0x00 to 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x00);
     h.load(&.{0x15});
     _ = try h.step();
@@ -1234,7 +1358,8 @@ test "0x15 DEC D: wraps from 0x00 to 0xFF" {
 }
 
 test "0x15 DEC D: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x01);
     h.load(&.{0x15});
     _ = try h.step();
@@ -1242,7 +1367,8 @@ test "0x15 DEC D: sets Z when result is 0x00" {
 }
 
 test "0x15 DEC D: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x10);
     h.load(&.{0x15});
     _ = try h.step();
@@ -1250,7 +1376,8 @@ test "0x15 DEC D: sets N flag" {
 }
 
 test "0x15 DEC D: sets H when lower nibble borrows (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x10);
     h.load(&.{0x15});
     _ = try h.step();
@@ -1258,7 +1385,8 @@ test "0x15 DEC D: sets H when lower nibble borrows (0x10 -> 0x0F)" {
 }
 
 test "0x15 DEC D: clears H when no borrow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x0F);
     h.load(&.{0x15});
     _ = try h.step();
@@ -1266,7 +1394,8 @@ test "0x15 DEC D: clears H when no borrow" {
 }
 
 test "0x15 DEC D: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.setD(0x00);
     h.load(&.{0x15});
@@ -1275,14 +1404,16 @@ test "0x15 DEC D: does not affect C flag" {
 }
 
 test "0x15 DEC D: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x15});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
 
 test "0x15 DEC D: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setD(0x05);
     h.load(&.{0x15});
@@ -1295,28 +1426,32 @@ test "0x15 DEC D: clears Z when result is non-zero" {
 // ---------------------------------------------------------------------------
 
 test "0x16 LD D,u8: loads immediate byte into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x16, 0xBE });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xBE), h.regD());
 }
 
 test "0x16 LD D,u8: edge case 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x16, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0x00), h.regD());
 }
 
 test "0x16 LD D,u8: edge case 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x16, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xFF), h.regD());
 }
 
 test "0x16 LD D,u8: consumes 8 T-cycles and advances PC by 2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x16, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -1325,7 +1460,8 @@ test "0x16 LD D,u8: consumes 8 T-cycles and advances PC by 2" {
 }
 
 test "0x16 LD D,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x16, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -1337,7 +1473,8 @@ test "0x16 LD D,u8: does not affect flags" {
 // ---------------------------------------------------------------------------
 
 test "0x17 RLA: old carry goes into bit 0" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000000);
     h.cpu.registers.af.parts.f |= (1 << 4); // set carry
     h.load(&.{0x17});
@@ -1346,7 +1483,8 @@ test "0x17 RLA: old carry goes into bit 0" {
 }
 
 test "0x17 RLA: bit 7 goes into carry flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b10000000);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear carry
     h.load(&.{0x17});
@@ -1355,7 +1493,8 @@ test "0x17 RLA: bit 7 goes into carry flag" {
 }
 
 test "0x17 RLA: bit 7 zero clears carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000000);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     h.load(&.{0x17});
@@ -1364,7 +1503,8 @@ test "0x17 RLA: bit 7 zero clears carry" {
 }
 
 test "0x17 RLA: Z flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.cpu.registers.af.parts.f |= (1 << 7); // force Z set
     h.load(&.{0x17});
@@ -1373,7 +1513,8 @@ test "0x17 RLA: Z flag always cleared" {
 }
 
 test "0x17 RLA: N flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x17});
     _ = try h.step();
@@ -1381,7 +1522,8 @@ test "0x17 RLA: N flag always cleared" {
 }
 
 test "0x17 RLA: H flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x17});
     _ = try h.step();
@@ -1389,7 +1531,8 @@ test "0x17 RLA: H flag always cleared" {
 }
 
 test "0x17 RLA: full rotation with carry in and out" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // A = 0b10110101, carry = 1
     // result = 0b01101011, carry = 1 (old bit 7)
     h.setA(0b10110101);
@@ -1401,7 +1544,8 @@ test "0x17 RLA: full rotation with carry in and out" {
 }
 
 test "0x17 RLA: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x17});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -1412,7 +1556,8 @@ test "0x17 RLA: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x18 JR i8: jumps forward by positive offset" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // PC starts at 0x0100, fetch opcode -> 0x0101, fetch offset -> 0x0102
     // offset = +5 -> PC = 0x0102 + 5 = 0x0107
     h.load(&.{ 0x18, 0x05 });
@@ -1421,7 +1566,8 @@ test "0x18 JR i8: jumps forward by positive offset" {
 }
 
 test "0x18 JR i8: jumps backward by negative offset" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // offset = -4 (0xFC as i8) -> PC = 0x0102 + (-4) = 0x00FE
     h.load(&.{ 0x18, 0xFC });
     _ = try h.step();
@@ -1429,21 +1575,24 @@ test "0x18 JR i8: jumps backward by negative offset" {
 }
 
 test "0x18 JR i8: offset of zero stays at PC+2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x18, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x0102), h.regPC());
 }
 
 test "0x18 JR i8: consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x18, 0x00 });
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 12), cycles);
 }
 
 test "0x18 JR i8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x18, 0x00 });
     const f_before = h.regF();
     _ = try h.step();
@@ -1455,7 +1604,8 @@ test "0x18 JR i8: does not affect flags" {
 // ---------------------------------------------------------------------------
 
 test "0x19 ADD HL,DE: adds DE to HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0100);
     h.setDE(0x0200);
     h.load(&.{0x19});
@@ -1464,7 +1614,8 @@ test "0x19 ADD HL,DE: adds DE to HL" {
 }
 
 test "0x19 ADD HL,DE: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.setDE(0x0001);
     h.load(&.{0x19});
@@ -1473,7 +1624,8 @@ test "0x19 ADD HL,DE: clears N flag" {
 }
 
 test "0x19 ADD HL,DE: sets C on overflow past 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     h.setDE(0x0001);
     h.load(&.{0x19});
@@ -1482,7 +1634,8 @@ test "0x19 ADD HL,DE: sets C on overflow past 0xFFFF" {
 }
 
 test "0x19 ADD HL,DE: clears C when no overflow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.setDE(0x0001);
     h.load(&.{0x19});
@@ -1491,7 +1644,8 @@ test "0x19 ADD HL,DE: clears C when no overflow" {
 }
 
 test "0x19 ADD HL,DE: sets H on carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0FFF);
     h.setDE(0x0001);
     h.load(&.{0x19});
@@ -1500,7 +1654,8 @@ test "0x19 ADD HL,DE: sets H on carry from bit 11" {
 }
 
 test "0x19 ADD HL,DE: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.setHL(0xFFFF);
     h.setDE(0x0001);
@@ -1510,7 +1665,8 @@ test "0x19 ADD HL,DE: does not affect Z flag" {
 }
 
 test "0x19 ADD HL,DE: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x19});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -1521,7 +1677,8 @@ test "0x19 ADD HL,DE: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x1A LD A,(DE): loads byte from address in DE into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x1A});
@@ -1530,7 +1687,8 @@ test "0x1A LD A,(DE): loads byte from address in DE into A" {
 }
 
 test "0x1A LD A,(DE): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x1A});
@@ -1539,7 +1697,8 @@ test "0x1A LD A,(DE): consumes 8 T-cycles" {
 }
 
 test "0x1A LD A,(DE): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x1A});
@@ -1549,7 +1708,8 @@ test "0x1A LD A,(DE): does not affect flags" {
 }
 
 test "0x1A LD A,(DE): does not modify DE" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0xC000);
     h.writeMem(0xC000, 0x01);
     h.load(&.{0x1A});
@@ -1562,7 +1722,8 @@ test "0x1A LD A,(DE): does not modify DE" {
 // ---------------------------------------------------------------------------
 
 test "0x1B DEC DE: decrements DE by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0x0010);
     h.load(&.{0x1B});
     _ = try h.step();
@@ -1570,7 +1731,8 @@ test "0x1B DEC DE: decrements DE by 1" {
 }
 
 test "0x1B DEC DE: wraps from 0x0000 to 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0x0000);
     h.load(&.{0x1B});
     _ = try h.step();
@@ -1578,7 +1740,8 @@ test "0x1B DEC DE: wraps from 0x0000 to 0xFFFF" {
 }
 
 test "0x1B DEC DE: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setDE(0x0000);
     h.load(&.{0x1B});
     const f_before = h.regF();
@@ -1587,7 +1750,8 @@ test "0x1B DEC DE: does not affect flags" {
 }
 
 test "0x1B DEC DE: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x1B});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -1598,7 +1762,8 @@ test "0x1B DEC DE: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x1C INC E: increments E by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x10);
     h.load(&.{0x1C});
     _ = try h.step();
@@ -1606,7 +1771,8 @@ test "0x1C INC E: increments E by 1" {
 }
 
 test "0x1C INC E: sets Z when result wraps to 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0xFF);
     h.load(&.{0x1C});
     _ = try h.step();
@@ -1614,7 +1780,8 @@ test "0x1C INC E: sets Z when result wraps to 0x00" {
 }
 
 test "0x1C INC E: sets H on lower nibble wrap (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x0F);
     h.load(&.{0x1C});
     _ = try h.step();
@@ -1622,7 +1789,8 @@ test "0x1C INC E: sets H on lower nibble wrap (0x0F -> 0x10)" {
 }
 
 test "0x1C INC E: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x01);
     h.load(&.{0x1C});
     _ = try h.step();
@@ -1630,14 +1798,16 @@ test "0x1C INC E: clears N flag" {
 }
 
 test "0x1C INC E: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x1C});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
 
 test "0x1C INC E: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setE(0x00);
     h.load(&.{0x1C});
@@ -1646,7 +1816,8 @@ test "0x1C INC E: clears Z when result is non-zero" {
 }
 
 test "0x1C INC E: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setE(0x00);
     h.load(&.{0x1C});
@@ -1655,7 +1826,8 @@ test "0x1C INC E: clears H when lower nibble does not wrap" {
 }
 
 test "0x1C INC E: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setE(0xFF);
     h.load(&.{0x1C});
@@ -1668,7 +1840,8 @@ test "0x1C INC E: does not affect C flag" {
 // ---------------------------------------------------------------------------
 
 test "0x1D DEC E: decrements E by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x10);
     h.load(&.{0x1D});
     _ = try h.step();
@@ -1676,7 +1849,8 @@ test "0x1D DEC E: decrements E by 1" {
 }
 
 test "0x1D DEC E: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x01);
     h.load(&.{0x1D});
     _ = try h.step();
@@ -1684,7 +1858,8 @@ test "0x1D DEC E: sets Z when result is 0x00" {
 }
 
 test "0x1D DEC E: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x05);
     h.load(&.{0x1D});
     _ = try h.step();
@@ -1692,7 +1867,8 @@ test "0x1D DEC E: sets N flag" {
 }
 
 test "0x1D DEC E: sets H on borrow (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x10);
     h.load(&.{0x1D});
     _ = try h.step();
@@ -1700,14 +1876,16 @@ test "0x1D DEC E: sets H on borrow (0x10 -> 0x0F)" {
 }
 
 test "0x1D DEC E: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x1D});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
 }
 
 test "0x1D DEC E: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setE(0x05);
     h.load(&.{0x1D});
@@ -1716,7 +1894,8 @@ test "0x1D DEC E: clears Z when result is non-zero" {
 }
 
 test "0x1D DEC E: clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setE(0x0F);
     h.load(&.{0x1D});
@@ -1725,7 +1904,8 @@ test "0x1D DEC E: clears H when no borrow from upper nibble" {
 }
 
 test "0x1D DEC E: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setE(0x00);
     h.load(&.{0x1D});
@@ -1738,14 +1918,16 @@ test "0x1D DEC E: does not affect C flag" {
 // ---------------------------------------------------------------------------
 
 test "0x1E LD E,u8: loads immediate byte into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x1E, 0xAB });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regE());
 }
 
 test "0x1E LD E,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x1E, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -1753,7 +1935,8 @@ test "0x1E LD E,u8: does not affect flags" {
 }
 
 test "0x1E LD E,u8: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x1E, 0x00 });
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -1764,7 +1947,8 @@ test "0x1E LD E,u8: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x1F RRA: old carry goes into bit 7" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000000);
     h.cpu.registers.af.parts.f |= (1 << 4); // set carry
     h.load(&.{0x1F});
@@ -1773,7 +1957,8 @@ test "0x1F RRA: old carry goes into bit 7" {
 }
 
 test "0x1F RRA: bit 0 goes into carry flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000001);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear carry
     h.load(&.{0x1F});
@@ -1782,7 +1967,8 @@ test "0x1F RRA: bit 0 goes into carry flag" {
 }
 
 test "0x1F RRA: bit 0 zero clears carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b00000000);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     h.load(&.{0x1F});
@@ -1791,7 +1977,8 @@ test "0x1F RRA: bit 0 zero clears carry" {
 }
 
 test "0x1F RRA: Z flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.load(&.{0x1F});
@@ -1800,7 +1987,8 @@ test "0x1F RRA: Z flag always cleared" {
 }
 
 test "0x1F RRA: N flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x1F});
     _ = try h.step();
@@ -1808,7 +1996,8 @@ test "0x1F RRA: N flag always cleared" {
 }
 
 test "0x1F RRA: H flag always cleared" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x1F});
     _ = try h.step();
@@ -1816,7 +2005,8 @@ test "0x1F RRA: H flag always cleared" {
 }
 
 test "0x1F RRA: full rotation with carry in and out" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // A = 0b10110101, carry = 1
     // result = 0b11011010, carry = 1 (old bit 0)
     h.setA(0b10110101);
@@ -1828,7 +2018,8 @@ test "0x1F RRA: full rotation with carry in and out" {
 }
 
 test "0x1F RRA: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x1F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -1842,7 +2033,8 @@ test "0x1F RRA: consumes 4 T-cycles" {
 //       Taken: 12 T-cycles. Not taken: 8 T-cycles.
 
 test "0x20 JR NZ,i8: branches forward when Z is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Clear Z flag
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
     // offset = +4: PC will be 0x0102 after fetch, then +4 = 0x0106
@@ -1852,7 +2044,8 @@ test "0x20 JR NZ,i8: branches forward when Z is clear" {
 }
 
 test "0x20 JR NZ,i8: branches backward when Z is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
     // offset = -2 (0xFE as i8): PC = 0x0102 after fetch, then -2 = 0x0100
     h.load(&.{ 0x20, 0xFE });
@@ -1861,7 +2054,8 @@ test "0x20 JR NZ,i8: branches backward when Z is clear" {
 }
 
 test "0x20 JR NZ,i8: does not branch when Z is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     h.load(&.{ 0x20, 0x10 });
     _ = try h.step();
@@ -1870,7 +2064,8 @@ test "0x20 JR NZ,i8: does not branch when Z is set" {
 }
 
 test "0x20 JR NZ,i8: taken branch consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
     h.load(&.{ 0x20, 0x00 });
     const cycles = try h.step();
@@ -1878,7 +2073,8 @@ test "0x20 JR NZ,i8: taken branch consumes 12 T-cycles" {
 }
 
 test "0x20 JR NZ,i8: not-taken branch consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // Z set → no branch
     h.load(&.{ 0x20, 0x00 });
     const cycles = try h.step();
@@ -1886,7 +2082,8 @@ test "0x20 JR NZ,i8: not-taken branch consumes 8 T-cycles" {
 }
 
 test "0x20 JR NZ,i8: does not affect any flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
     h.load(&.{ 0x20, 0x00 });
     const f_before = h.regF();
@@ -1901,14 +2098,16 @@ test "0x20 JR NZ,i8: does not affect any flag" {
 //       12 T-cycles, PC+3. Flags unaffected.
 
 test "0x21 LD HL,u16: loads little-endian u16 into HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x21, 0x34, 0x12 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x1234), h.regHL());
 }
 
 test "0x21 LD HL,u16: low byte goes into L, high byte into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x21, 0xAB, 0xCD });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regL());
@@ -1916,7 +2115,8 @@ test "0x21 LD HL,u16: low byte goes into L, high byte into H" {
 }
 
 test "0x21 LD HL,u16: consumes 12 T-cycles and advances PC by 3" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x21, 0x00, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -1925,7 +2125,8 @@ test "0x21 LD HL,u16: consumes 12 T-cycles and advances PC by 3" {
 }
 
 test "0x21 LD HL,u16: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x21, 0xFF, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -1933,14 +2134,16 @@ test "0x21 LD HL,u16: does not affect flags" {
 }
 
 test "0x21 LD HL,u16: edge case 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x21, 0x00, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x0000), h.regHL());
 }
 
 test "0x21 LD HL,u16: edge case 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x21, 0xFF, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0xFFFF), h.regHL());
@@ -1953,7 +2156,8 @@ test "0x21 LD HL,u16: edge case 0xFFFF" {
 //       8 T-cycles. Flags unaffected.
 
 test "0x22 LD (HL+),A: writes A to address held in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x77);
     h.load(&.{0x22});
@@ -1962,7 +2166,8 @@ test "0x22 LD (HL+),A: writes A to address held in HL" {
 }
 
 test "0x22 LD (HL+),A: increments HL after the write" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x01);
     h.load(&.{0x22});
@@ -1971,7 +2176,8 @@ test "0x22 LD (HL+),A: increments HL after the write" {
 }
 
 test "0x22 LD (HL+),A: HL wraps from 0xFFFF to 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Use a writable mirror address — Echo RAM mirrors 0xC000
     // We need HL=0xFFFF but that's not writable. Use 0xFFFF -> write to IE (0xFFFF is writable).
     // Actually the spec only requires HL increments; we test the increment, not the write destination.
@@ -1984,7 +2190,8 @@ test "0x22 LD (HL+),A: HL wraps from 0xFFFF to 0x0000" {
 }
 
 test "0x22 LD (HL+),A: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x00);
     h.load(&.{0x22});
@@ -1993,7 +2200,8 @@ test "0x22 LD (HL+),A: consumes 8 T-cycles" {
 }
 
 test "0x22 LD (HL+),A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0xFF);
     h.load(&.{0x22});
@@ -2008,7 +2216,8 @@ test "0x22 LD (HL+),A: does not affect flags" {
 // Spec: Increment HL by 1. 8 T-cycles. Flags unaffected.
 
 test "0x23 INC HL: increments HL by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0010);
     h.load(&.{0x23});
     _ = try h.step();
@@ -2016,7 +2225,8 @@ test "0x23 INC HL: increments HL by 1" {
 }
 
 test "0x23 INC HL: wraps from 0xFFFF to 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     h.load(&.{0x23});
     _ = try h.step();
@@ -2024,7 +2234,8 @@ test "0x23 INC HL: wraps from 0xFFFF to 0x0000" {
 }
 
 test "0x23 INC HL: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     h.load(&.{0x23});
     const f_before = h.regF();
@@ -2033,7 +2244,8 @@ test "0x23 INC HL: does not affect flags" {
 }
 
 test "0x23 INC HL: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x23});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -2046,7 +2258,8 @@ test "0x23 INC HL: consumes 8 T-cycles" {
 //       C unaffected. 4 T-cycles.
 
 test "0x24 INC H: increments H by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x10;
     h.load(&.{0x24});
     _ = try h.step();
@@ -2054,7 +2267,8 @@ test "0x24 INC H: increments H by 1" {
 }
 
 test "0x24 INC H: sets Z when result is 0x00 (wrap from 0xFF)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0xFF;
     h.load(&.{0x24});
     _ = try h.step();
@@ -2063,7 +2277,8 @@ test "0x24 INC H: sets Z when result is 0x00 (wrap from 0xFF)" {
 }
 
 test "0x24 INC H: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x00;
     h.load(&.{0x24});
     _ = try h.step();
@@ -2071,7 +2286,8 @@ test "0x24 INC H: clears Z when result is non-zero" {
 }
 
 test "0x24 INC H: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // force N set
     h.cpu.registers.hl.parts.h = 0x10;
     h.load(&.{0x24});
@@ -2080,7 +2296,8 @@ test "0x24 INC H: clears N flag" {
 }
 
 test "0x24 INC H: sets H when lower nibble wraps (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x0F;
     h.load(&.{0x24});
     _ = try h.step();
@@ -2088,7 +2305,8 @@ test "0x24 INC H: sets H when lower nibble wraps (0x0F -> 0x10)" {
 }
 
 test "0x24 INC H: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x00;
     h.load(&.{0x24});
     _ = try h.step();
@@ -2096,7 +2314,8 @@ test "0x24 INC H: clears H when lower nibble does not wrap" {
 }
 
 test "0x24 INC H: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.cpu.registers.hl.parts.h = 0xFF;
     h.load(&.{0x24});
@@ -2105,7 +2324,8 @@ test "0x24 INC H: does not affect C flag" {
 }
 
 test "0x24 INC H: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x24});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -2118,7 +2338,8 @@ test "0x24 INC H: consumes 4 T-cycles" {
 //       C unaffected. 4 T-cycles.
 
 test "0x25 DEC H: decrements H by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x10;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2126,7 +2347,8 @@ test "0x25 DEC H: decrements H by 1" {
 }
 
 test "0x25 DEC H: wraps from 0x00 to 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x00;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2134,7 +2356,8 @@ test "0x25 DEC H: wraps from 0x00 to 0xFF" {
 }
 
 test "0x25 DEC H: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x01;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2142,7 +2365,8 @@ test "0x25 DEC H: sets Z when result is 0x00" {
 }
 
 test "0x25 DEC H: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x05;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2150,7 +2374,8 @@ test "0x25 DEC H: clears Z when result is non-zero" {
 }
 
 test "0x25 DEC H: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x10;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2158,7 +2383,8 @@ test "0x25 DEC H: sets N flag" {
 }
 
 test "0x25 DEC H: sets H when lower nibble borrows (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x10;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2166,7 +2392,8 @@ test "0x25 DEC H: sets H when lower nibble borrows (0x10 -> 0x0F)" {
 }
 
 test "0x25 DEC H: clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x0F;
     h.load(&.{0x25});
     _ = try h.step();
@@ -2174,7 +2401,8 @@ test "0x25 DEC H: clears H when no borrow from upper nibble" {
 }
 
 test "0x25 DEC H: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.cpu.registers.hl.parts.h = 0x00;
     h.load(&.{0x25});
@@ -2183,7 +2411,8 @@ test "0x25 DEC H: does not affect C flag" {
 }
 
 test "0x25 DEC H: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x25});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -2195,28 +2424,32 @@ test "0x25 DEC H: consumes 4 T-cycles" {
 // Spec: Load immediate byte into H. 8 T-cycles, PC+2. Flags unaffected.
 
 test "0x26 LD H,u8: loads immediate byte into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x26, 0xBE });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xBE), h.regH());
 }
 
 test "0x26 LD H,u8: edge case 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x26, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0x00), h.regH());
 }
 
 test "0x26 LD H,u8: edge case 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x26, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xFF), h.regH());
 }
 
 test "0x26 LD H,u8: consumes 8 T-cycles and advances PC by 2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x26, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -2225,7 +2458,8 @@ test "0x26 LD H,u8: consumes 8 T-cycles and advances PC by 2" {
 }
 
 test "0x26 LD H,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x26, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -2243,7 +2477,8 @@ test "0x26 LD H,u8: does not affect flags" {
 // and Pan Docs CPU instructions.
 
 test "0x27 DAA: adjusts after BCD addition with no flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x42 + 0x35 = 0x77 (both valid BCD, no correction needed)
     h.setA(0x77);
     // N=0, H=0, C=0
@@ -2254,7 +2489,8 @@ test "0x27 DAA: adjusts after BCD addition with no flags" {
 }
 
 test "0x27 DAA: corrects low nibble overflow after addition (adds 0x06)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x42 + 0x29 = 0x6B — unit digit > 9, add 0x06 -> 0x71
     h.setA(0x6B);
     h.cpu.registers.af.parts.f = 0x00; // N=0, H=0, C=0
@@ -2264,7 +2500,8 @@ test "0x27 DAA: corrects low nibble overflow after addition (adds 0x06)" {
 }
 
 test "0x27 DAA: corrects upper nibble overflow after addition (adds 0x60)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // A = 0xC4, tens digit > 9 -> add 0x60 -> 0x24 with carry
     h.setA(0xC4);
     h.cpu.registers.af.parts.f = 0x00; // N=0, H=0, C=0
@@ -2275,7 +2512,8 @@ test "0x27 DAA: corrects upper nibble overflow after addition (adds 0x60)" {
 }
 
 test "0x27 DAA: corrects via carry flag set (adds 0x60 regardless of A value)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // A = 0x10, carry set from previous op -> add 0x60 -> 0x70, carry remains
     h.setA(0x10);
     h.cpu.registers.af.parts.f = (1 << 4); // C=1, N=0, H=0
@@ -2286,7 +2524,8 @@ test "0x27 DAA: corrects via carry flag set (adds 0x60 regardless of A value)" {
 }
 
 test "0x27 DAA: corrects via half-carry flag set (adds 0x06)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // A = 0x11, H set from previous op -> add 0x06 -> 0x17
     h.setA(0x11);
     h.cpu.registers.af.parts.f = (1 << 5); // H=1, N=0, C=0
@@ -2296,7 +2535,8 @@ test "0x27 DAA: corrects via half-carry flag set (adds 0x06)" {
 }
 
 test "0x27 DAA: sets Z when corrected result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // A = 0x9A, no flags: 0x9A > 0x99 so add 0x60 -> 0xFA, low nibble 0xA > 9
     // so also add 0x06 -> 0x00 with carry
     h.setA(0x9A);
@@ -2308,7 +2548,8 @@ test "0x27 DAA: sets Z when corrected result is 0x00" {
 }
 
 test "0x27 DAA: always clears H flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x11);
     h.cpu.registers.af.parts.f = (1 << 5); // H=1
     h.load(&.{0x27});
@@ -2317,7 +2558,8 @@ test "0x27 DAA: always clears H flag" {
 }
 
 test "0x27 DAA: does not modify N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // N=1 (subtract path)
     h.setA(0x07);
     h.cpu.registers.af.parts.f = (1 << 6); // N=1, H=0, C=0
@@ -2327,7 +2569,8 @@ test "0x27 DAA: does not modify N flag" {
 }
 
 test "0x27 DAA: subtraction path: corrects via half-carry (subtracts 0x06)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x20 - 0x13 = 0x0D, half-carry was set -> subtract 0x06 -> 0x07
     h.setA(0x0D);
     h.cpu.registers.af.parts.f = (1 << 6) | (1 << 5); // N=1, H=1
@@ -2337,7 +2580,8 @@ test "0x27 DAA: subtraction path: corrects via half-carry (subtracts 0x06)" {
 }
 
 test "0x27 DAA: subtraction path: corrects via carry (subtracts 0x60)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x05 - 0x21 = 0xE4, carry was set -> subtract 0x60 -> 0x84
     h.setA(0xE4);
     h.cpu.registers.af.parts.f = (1 << 6) | (1 << 4); // N=1, C=1
@@ -2348,7 +2592,8 @@ test "0x27 DAA: subtraction path: corrects via carry (subtracts 0x60)" {
 }
 
 test "0x27 DAA: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.cpu.registers.af.parts.f = 0x00;
     h.load(&.{0x27});
@@ -2363,7 +2608,8 @@ test "0x27 DAA: consumes 4 T-cycles" {
 //       Taken: 12 T-cycles. Not taken: 8 T-cycles.
 
 test "0x28 JR Z,i8: branches forward when Z is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     // offset = +4: PC = 0x0102 after fetch, then +4 = 0x0106
     h.load(&.{ 0x28, 0x04 });
@@ -2372,7 +2618,8 @@ test "0x28 JR Z,i8: branches forward when Z is set" {
 }
 
 test "0x28 JR Z,i8: branches backward when Z is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7);
     // offset = -2 (0xFE): PC = 0x0102 after fetch, then -2 = 0x0100
     h.load(&.{ 0x28, 0xFE });
@@ -2381,7 +2628,8 @@ test "0x28 JR Z,i8: branches backward when Z is set" {
 }
 
 test "0x28 JR Z,i8: does not branch when Z is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7)); // clear Z
     h.load(&.{ 0x28, 0x10 });
     _ = try h.step();
@@ -2389,7 +2637,8 @@ test "0x28 JR Z,i8: does not branch when Z is clear" {
 }
 
 test "0x28 JR Z,i8: taken branch consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.load(&.{ 0x28, 0x00 });
     const cycles = try h.step();
@@ -2397,7 +2646,8 @@ test "0x28 JR Z,i8: taken branch consumes 12 T-cycles" {
 }
 
 test "0x28 JR Z,i8: not-taken branch consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 7));
     h.load(&.{ 0x28, 0x00 });
     const cycles = try h.step();
@@ -2405,7 +2655,8 @@ test "0x28 JR Z,i8: not-taken branch consumes 8 T-cycles" {
 }
 
 test "0x28 JR Z,i8: does not affect any flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.load(&.{ 0x28, 0x00 });
     const f_before = h.regF();
@@ -2421,7 +2672,8 @@ test "0x28 JR Z,i8: does not affect any flag" {
 //       Z unaffected. 8 T-cycles.
 
 test "0x29 ADD HL,HL: doubles HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0010);
     h.load(&.{0x29});
     _ = try h.step();
@@ -2429,7 +2681,8 @@ test "0x29 ADD HL,HL: doubles HL" {
 }
 
 test "0x29 ADD HL,HL: wraps on overflow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x8000);
     h.load(&.{0x29});
     _ = try h.step();
@@ -2437,7 +2690,8 @@ test "0x29 ADD HL,HL: wraps on overflow" {
 }
 
 test "0x29 ADD HL,HL: sets C on 16-bit carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x8000);
     h.load(&.{0x29});
     _ = try h.step();
@@ -2445,7 +2699,8 @@ test "0x29 ADD HL,HL: sets C on 16-bit carry" {
 }
 
 test "0x29 ADD HL,HL: clears C when no 16-bit carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.load(&.{0x29});
     _ = try h.step();
@@ -2453,7 +2708,8 @@ test "0x29 ADD HL,HL: clears C when no 16-bit carry" {
 }
 
 test "0x29 ADD HL,HL: sets H on carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x0800 + 0x0800 = 0x1000 — bit 11 carries into bit 12
     h.setHL(0x0800);
     h.load(&.{0x29});
@@ -2462,7 +2718,8 @@ test "0x29 ADD HL,HL: sets H on carry from bit 11" {
 }
 
 test "0x29 ADD HL,HL: clears H when no carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.load(&.{0x29});
     _ = try h.step();
@@ -2470,7 +2727,8 @@ test "0x29 ADD HL,HL: clears H when no carry from bit 11" {
 }
 
 test "0x29 ADD HL,HL: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // force N set
     h.setHL(0x0010);
     h.load(&.{0x29});
@@ -2479,7 +2737,8 @@ test "0x29 ADD HL,HL: clears N flag" {
 }
 
 test "0x29 ADD HL,HL: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Z set before; HL=0x8000 -> result=0x0000, but Z must not be touched
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     h.setHL(0x8000);
@@ -2489,7 +2748,8 @@ test "0x29 ADD HL,HL: does not affect Z flag" {
 }
 
 test "0x29 ADD HL,HL: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x29});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -2502,7 +2762,8 @@ test "0x29 ADD HL,HL: consumes 8 T-cycles" {
 //       8 T-cycles. Flags unaffected.
 
 test "0x2A LD A,(HL+): loads byte from address in HL into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x2A});
@@ -2511,7 +2772,8 @@ test "0x2A LD A,(HL+): loads byte from address in HL into A" {
 }
 
 test "0x2A LD A,(HL+): increments HL after the read" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x2A});
@@ -2520,7 +2782,8 @@ test "0x2A LD A,(HL+): increments HL after the read" {
 }
 
 test "0x2A LD A,(HL+): HL wraps from 0xFFFF to 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     // 0xFFFF is IE register — readable
     h.load(&.{0x2A});
@@ -2529,7 +2792,8 @@ test "0x2A LD A,(HL+): HL wraps from 0xFFFF to 0x0000" {
 }
 
 test "0x2A LD A,(HL+): reads the address before incrementing" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xAB);
     h.writeMem(0xC001, 0xCD);
@@ -2540,7 +2804,8 @@ test "0x2A LD A,(HL+): reads the address before incrementing" {
 }
 
 test "0x2A LD A,(HL+): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x2A});
@@ -2550,7 +2815,8 @@ test "0x2A LD A,(HL+): does not affect flags" {
 }
 
 test "0x2A LD A,(HL+): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x2A});
@@ -2564,7 +2830,8 @@ test "0x2A LD A,(HL+): consumes 8 T-cycles" {
 // Spec: Decrement HL by 1. 8 T-cycles. Flags unaffected.
 
 test "0x2B DEC HL: decrements HL by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0010);
     h.load(&.{0x2B});
     _ = try h.step();
@@ -2572,7 +2839,8 @@ test "0x2B DEC HL: decrements HL by 1" {
 }
 
 test "0x2B DEC HL: wraps from 0x0000 to 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0000);
     h.load(&.{0x2B});
     _ = try h.step();
@@ -2580,7 +2848,8 @@ test "0x2B DEC HL: wraps from 0x0000 to 0xFFFF" {
 }
 
 test "0x2B DEC HL: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0000);
     h.load(&.{0x2B});
     const f_before = h.regF();
@@ -2589,7 +2858,8 @@ test "0x2B DEC HL: does not affect flags" {
 }
 
 test "0x2B DEC HL: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x2B});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -2602,7 +2872,8 @@ test "0x2B DEC HL: consumes 8 T-cycles" {
 //       C unaffected. 4 T-cycles.
 
 test "0x2C INC L: increments L by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x10;
     h.load(&.{0x2C});
     _ = try h.step();
@@ -2610,7 +2881,8 @@ test "0x2C INC L: increments L by 1" {
 }
 
 test "0x2C INC L: sets Z when result wraps to 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0xFF;
     h.load(&.{0x2C});
     _ = try h.step();
@@ -2618,7 +2890,8 @@ test "0x2C INC L: sets Z when result wraps to 0x00" {
 }
 
 test "0x2C INC L: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x00;
     h.load(&.{0x2C});
     _ = try h.step();
@@ -2626,7 +2899,8 @@ test "0x2C INC L: clears Z when result is non-zero" {
 }
 
 test "0x2C INC L: sets H on lower nibble wrap (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x0F;
     h.load(&.{0x2C});
     _ = try h.step();
@@ -2634,7 +2908,8 @@ test "0x2C INC L: sets H on lower nibble wrap (0x0F -> 0x10)" {
 }
 
 test "0x2C INC L: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x00;
     h.load(&.{0x2C});
     _ = try h.step();
@@ -2642,7 +2917,8 @@ test "0x2C INC L: clears H when lower nibble does not wrap" {
 }
 
 test "0x2C INC L: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6);
     h.cpu.registers.hl.parts.l = 0x01;
     h.load(&.{0x2C});
@@ -2651,7 +2927,8 @@ test "0x2C INC L: clears N flag" {
 }
 
 test "0x2C INC L: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.cpu.registers.hl.parts.l = 0xFF;
     h.load(&.{0x2C});
@@ -2660,7 +2937,8 @@ test "0x2C INC L: does not affect C flag" {
 }
 
 test "0x2C INC L: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x2C});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -2673,7 +2951,8 @@ test "0x2C INC L: consumes 4 T-cycles" {
 //       C unaffected. 4 T-cycles.
 
 test "0x2D DEC L: decrements L by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x10;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2681,7 +2960,8 @@ test "0x2D DEC L: decrements L by 1" {
 }
 
 test "0x2D DEC L: wraps from 0x00 to 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x00;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2689,7 +2969,8 @@ test "0x2D DEC L: wraps from 0x00 to 0xFF" {
 }
 
 test "0x2D DEC L: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x01;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2697,7 +2978,8 @@ test "0x2D DEC L: sets Z when result is 0x00" {
 }
 
 test "0x2D DEC L: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x05;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2705,7 +2987,8 @@ test "0x2D DEC L: clears Z when result is non-zero" {
 }
 
 test "0x2D DEC L: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x10;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2713,7 +2996,8 @@ test "0x2D DEC L: sets N flag" {
 }
 
 test "0x2D DEC L: sets H on borrow (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x10;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2721,7 +3005,8 @@ test "0x2D DEC L: sets H on borrow (0x10 -> 0x0F)" {
 }
 
 test "0x2D DEC L: clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.l = 0x0F;
     h.load(&.{0x2D});
     _ = try h.step();
@@ -2729,7 +3014,8 @@ test "0x2D DEC L: clears H when no borrow from upper nibble" {
 }
 
 test "0x2D DEC L: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.cpu.registers.hl.parts.l = 0x00;
     h.load(&.{0x2D});
@@ -2738,7 +3024,8 @@ test "0x2D DEC L: does not affect C flag" {
 }
 
 test "0x2D DEC L: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x2D});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -2750,28 +3037,32 @@ test "0x2D DEC L: consumes 4 T-cycles" {
 // Spec: Load immediate byte into L. 8 T-cycles, PC+2. Flags unaffected.
 
 test "0x2E LD L,u8: loads immediate byte into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x2E, 0xAB });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regL());
 }
 
 test "0x2E LD L,u8: edge case 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x2E, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0x00), h.regL());
 }
 
 test "0x2E LD L,u8: edge case 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x2E, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xFF), h.regL());
 }
 
 test "0x2E LD L,u8: consumes 8 T-cycles and advances PC by 2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x2E, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -2780,7 +3071,8 @@ test "0x2E LD L,u8: consumes 8 T-cycles and advances PC by 2" {
 }
 
 test "0x2E LD L,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x2E, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -2794,7 +3086,8 @@ test "0x2E LD L,u8: does not affect flags" {
 //       N and H always set. Z and C unaffected. 4 T-cycles.
 
 test "0x2F CPL: complements all bits of A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0b10110101);
     h.load(&.{0x2F});
     _ = try h.step();
@@ -2802,7 +3095,8 @@ test "0x2F CPL: complements all bits of A" {
 }
 
 test "0x2F CPL: complement of 0x00 is 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.load(&.{0x2F});
     _ = try h.step();
@@ -2810,7 +3104,8 @@ test "0x2F CPL: complement of 0x00 is 0xFF" {
 }
 
 test "0x2F CPL: complement of 0xFF is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x2F});
     _ = try h.step();
@@ -2818,7 +3113,8 @@ test "0x2F CPL: complement of 0xFF is 0x00" {
 }
 
 test "0x2F CPL: always sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 6)); // clear N
     h.setA(0x55);
     h.load(&.{0x2F});
@@ -2827,7 +3123,8 @@ test "0x2F CPL: always sets N flag" {
 }
 
 test "0x2F CPL: always sets H flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 5)); // clear H
     h.setA(0x55);
     h.load(&.{0x2F});
@@ -2836,7 +3133,8 @@ test "0x2F CPL: always sets H flag" {
 }
 
 test "0x2F CPL: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     h.setA(0x55);
     h.load(&.{0x2F});
@@ -2845,7 +3143,8 @@ test "0x2F CPL: does not affect Z flag" {
 }
 
 test "0x2F CPL: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setA(0x55);
     h.load(&.{0x2F});
@@ -2854,7 +3153,8 @@ test "0x2F CPL: does not affect C flag" {
 }
 
 test "0x2F CPL: applying twice restores original value" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xA5);
     h.load(&.{ 0x2F, 0x2F });
     _ = try h.step();
@@ -2863,7 +3163,8 @@ test "0x2F CPL: applying twice restores original value" {
 }
 
 test "0x2F CPL: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x2F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -2877,7 +3178,8 @@ test "0x2F CPL: consumes 4 T-cycles" {
 //       Taken: 12 T-cycles. Not taken: 8 T-cycles. Flags unaffected.
 
 test "0x30 JR NC,i8: branches forward when C is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear C
     // PC = 0x0102 after fetch, offset +4 -> 0x0106
     h.load(&.{ 0x30, 0x04 });
@@ -2886,7 +3188,8 @@ test "0x30 JR NC,i8: branches forward when C is clear" {
 }
 
 test "0x30 JR NC,i8: branches backward when C is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     // offset = -2 (0xFE): PC = 0x0102 after fetch, then -2 = 0x0100
     h.load(&.{ 0x30, 0xFE });
@@ -2895,7 +3198,8 @@ test "0x30 JR NC,i8: branches backward when C is clear" {
 }
 
 test "0x30 JR NC,i8: does not branch when C is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.load(&.{ 0x30, 0x10 });
     _ = try h.step();
@@ -2903,7 +3207,8 @@ test "0x30 JR NC,i8: does not branch when C is set" {
 }
 
 test "0x30 JR NC,i8: taken branch consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     h.load(&.{ 0x30, 0x00 });
     const cycles = try h.step();
@@ -2911,7 +3216,8 @@ test "0x30 JR NC,i8: taken branch consumes 12 T-cycles" {
 }
 
 test "0x30 JR NC,i8: not-taken branch consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{ 0x30, 0x00 });
     const cycles = try h.step();
@@ -2919,7 +3225,8 @@ test "0x30 JR NC,i8: not-taken branch consumes 8 T-cycles" {
 }
 
 test "0x30 JR NC,i8: does not affect any flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     h.load(&.{ 0x30, 0x00 });
     const f_before = h.regF();
@@ -2934,35 +3241,40 @@ test "0x30 JR NC,i8: does not affect any flag" {
 //       12 T-cycles, PC+3. Flags unaffected.
 
 test "0x31 LD SP,u16: loads little-endian u16 into SP" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x31, 0x34, 0x12 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x1234), h.regSP());
 }
 
 test "0x31 LD SP,u16: low byte is least significant, high byte most significant" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x31, 0xFE, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0xFFFE), h.regSP());
 }
 
 test "0x31 LD SP,u16: edge case 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x31, 0x00, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0x0000), h.regSP());
 }
 
 test "0x31 LD SP,u16: edge case 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x31, 0xFF, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u16, 0xFFFF), h.regSP());
 }
 
 test "0x31 LD SP,u16: consumes 12 T-cycles and advances PC by 3" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x31, 0x00, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -2971,7 +3283,8 @@ test "0x31 LD SP,u16: consumes 12 T-cycles and advances PC by 3" {
 }
 
 test "0x31 LD SP,u16: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x31, 0xFF, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -2985,7 +3298,8 @@ test "0x31 LD SP,u16: does not affect flags" {
 //       8 T-cycles. Flags unaffected.
 
 test "0x32 LD (HL-),A: writes A to address held in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x42);
     h.load(&.{0x32});
@@ -2994,7 +3308,8 @@ test "0x32 LD (HL-),A: writes A to address held in HL" {
 }
 
 test "0x32 LD (HL-),A: decrements HL after the write" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x01);
     h.load(&.{0x32});
@@ -3003,7 +3318,8 @@ test "0x32 LD (HL-),A: decrements HL after the write" {
 }
 
 test "0x32 LD (HL-),A: writes to original HL address not decremented address" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC001);
     h.setA(0x77);
     h.load(&.{0x32});
@@ -3013,7 +3329,8 @@ test "0x32 LD (HL-),A: writes to original HL address not decremented address" {
 }
 
 test "0x32 LD (HL-),A: HL wraps from 0x0000 to 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0000);
     h.setA(0x00);
     h.load(&.{0x32});
@@ -3022,7 +3339,8 @@ test "0x32 LD (HL-),A: HL wraps from 0x0000 to 0xFFFF" {
 }
 
 test "0x32 LD (HL-),A: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x00);
     h.load(&.{0x32});
@@ -3031,7 +3349,8 @@ test "0x32 LD (HL-),A: consumes 8 T-cycles" {
 }
 
 test "0x32 LD (HL-),A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0xFF);
     h.load(&.{0x32});
@@ -3046,7 +3365,8 @@ test "0x32 LD (HL-),A: does not affect flags" {
 // Spec: Increment SP by 1. 8 T-cycles. Flags unaffected.
 
 test "0x33 INC SP: increments SP by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0x0010);
     h.load(&.{0x33});
     _ = try h.step();
@@ -3054,7 +3374,8 @@ test "0x33 INC SP: increments SP by 1" {
 }
 
 test "0x33 INC SP: wraps from 0xFFFF to 0x0000" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0xFFFF);
     h.load(&.{0x33});
     _ = try h.step();
@@ -3062,7 +3383,8 @@ test "0x33 INC SP: wraps from 0xFFFF to 0x0000" {
 }
 
 test "0x33 INC SP: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0xFFFF);
     h.load(&.{0x33});
     const f_before = h.regF();
@@ -3071,7 +3393,8 @@ test "0x33 INC SP: does not affect flags" {
 }
 
 test "0x33 INC SP: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x33});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -3085,7 +3408,8 @@ test "0x33 INC SP: consumes 8 T-cycles" {
 //       12 T-cycles.
 
 test "0x34 INC (HL): increments the byte at the address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
     h.load(&.{0x34});
@@ -3094,7 +3418,8 @@ test "0x34 INC (HL): increments the byte at the address in HL" {
 }
 
 test "0x34 INC (HL): wraps from 0xFF to 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x34});
@@ -3103,7 +3428,8 @@ test "0x34 INC (HL): wraps from 0xFF to 0x00" {
 }
 
 test "0x34 INC (HL): sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x34});
@@ -3112,7 +3438,8 @@ test "0x34 INC (HL): sets Z when result is 0x00" {
 }
 
 test "0x34 INC (HL): clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
@@ -3122,7 +3449,8 @@ test "0x34 INC (HL): clears Z when result is non-zero" {
 }
 
 test "0x34 INC (HL): clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // pre-set N
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
@@ -3132,7 +3460,8 @@ test "0x34 INC (HL): clears N flag" {
 }
 
 test "0x34 INC (HL): sets H when lower nibble wraps (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x0F);
     h.load(&.{0x34});
@@ -3141,7 +3470,8 @@ test "0x34 INC (HL): sets H when lower nibble wraps (0x0F -> 0x10)" {
 }
 
 test "0x34 INC (HL): clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
@@ -3151,7 +3481,8 @@ test "0x34 INC (HL): clears H when lower nibble does not wrap" {
 }
 
 test "0x34 INC (HL): does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
@@ -3161,7 +3492,8 @@ test "0x34 INC (HL): does not affect C flag" {
 }
 
 test "0x34 INC (HL): does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x01);
     h.load(&.{0x34});
@@ -3170,7 +3502,8 @@ test "0x34 INC (HL): does not modify HL" {
 }
 
 test "0x34 INC (HL): consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x34});
@@ -3186,7 +3519,8 @@ test "0x34 INC (HL): consumes 12 T-cycles" {
 //       12 T-cycles.
 
 test "0x35 DEC (HL): decrements the byte at the address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
     h.load(&.{0x35});
@@ -3195,7 +3529,8 @@ test "0x35 DEC (HL): decrements the byte at the address in HL" {
 }
 
 test "0x35 DEC (HL): wraps from 0x00 to 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x35});
@@ -3204,7 +3539,8 @@ test "0x35 DEC (HL): wraps from 0x00 to 0xFF" {
 }
 
 test "0x35 DEC (HL): sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x01);
     h.load(&.{0x35});
@@ -3213,7 +3549,8 @@ test "0x35 DEC (HL): sets Z when result is 0x00" {
 }
 
 test "0x35 DEC (HL): clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x05);
@@ -3223,7 +3560,8 @@ test "0x35 DEC (HL): clears Z when result is non-zero" {
 }
 
 test "0x35 DEC (HL): sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 6)); // clear N
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
@@ -3233,7 +3571,8 @@ test "0x35 DEC (HL): sets N flag" {
 }
 
 test "0x35 DEC (HL): sets H when lower nibble borrows (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
     h.load(&.{0x35});
@@ -3242,7 +3581,8 @@ test "0x35 DEC (HL): sets H when lower nibble borrows (0x10 -> 0x0F)" {
 }
 
 test "0x35 DEC (HL): clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x0F);
@@ -3252,7 +3592,8 @@ test "0x35 DEC (HL): clears H when no borrow from upper nibble" {
 }
 
 test "0x35 DEC (HL): does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
@@ -3262,7 +3603,8 @@ test "0x35 DEC (HL): does not affect C flag" {
 }
 
 test "0x35 DEC (HL): does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x01);
     h.load(&.{0x35});
@@ -3271,7 +3613,8 @@ test "0x35 DEC (HL): does not modify HL" {
 }
 
 test "0x35 DEC (HL): consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x35});
@@ -3285,7 +3628,8 @@ test "0x35 DEC (HL): consumes 12 T-cycles" {
 // Spec: Write immediate byte to address in HL. 12 T-cycles. Flags unaffected.
 
 test "0x36 LD (HL),u8: writes immediate byte to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{ 0x36, 0xAB });
     _ = try h.step();
@@ -3293,7 +3637,8 @@ test "0x36 LD (HL),u8: writes immediate byte to address in HL" {
 }
 
 test "0x36 LD (HL),u8: edge case 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF); // pre-fill to confirm it gets overwritten
     h.load(&.{ 0x36, 0x00 });
@@ -3302,7 +3647,8 @@ test "0x36 LD (HL),u8: edge case 0x00" {
 }
 
 test "0x36 LD (HL),u8: edge case 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{ 0x36, 0xFF });
     _ = try h.step();
@@ -3310,7 +3656,8 @@ test "0x36 LD (HL),u8: edge case 0xFF" {
 }
 
 test "0x36 LD (HL),u8: does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{ 0x36, 0x00 });
     _ = try h.step();
@@ -3318,7 +3665,8 @@ test "0x36 LD (HL),u8: does not modify HL" {
 }
 
 test "0x36 LD (HL),u8: consumes 12 T-cycles and advances PC by 2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{ 0x36, 0x00 });
     const pc_before = h.regPC();
@@ -3328,7 +3676,8 @@ test "0x36 LD (HL),u8: consumes 12 T-cycles and advances PC by 2" {
 }
 
 test "0x36 LD (HL),u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{ 0x36, 0xFF });
     const f_before = h.regF();
@@ -3342,7 +3691,8 @@ test "0x36 LD (HL),u8: does not affect flags" {
 // Spec: Set carry flag. N and H always cleared. Z unaffected. 4 T-cycles.
 
 test "0x37 SCF: sets C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear C first
     h.load(&.{0x37});
     _ = try h.step();
@@ -3350,7 +3700,8 @@ test "0x37 SCF: sets C flag" {
 }
 
 test "0x37 SCF: C flag remains set if already set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{0x37});
     _ = try h.step();
@@ -3358,7 +3709,8 @@ test "0x37 SCF: C flag remains set if already set" {
 }
 
 test "0x37 SCF: always clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // pre-set N
     h.load(&.{0x37});
     _ = try h.step();
@@ -3366,7 +3718,8 @@ test "0x37 SCF: always clears N flag" {
 }
 
 test "0x37 SCF: always clears H flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.load(&.{0x37});
     _ = try h.step();
@@ -3374,7 +3727,8 @@ test "0x37 SCF: always clears H flag" {
 }
 
 test "0x37 SCF: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     h.load(&.{0x37});
     _ = try h.step();
@@ -3382,7 +3736,8 @@ test "0x37 SCF: does not affect Z flag" {
 }
 
 test "0x37 SCF: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x37});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -3395,7 +3750,8 @@ test "0x37 SCF: consumes 4 T-cycles" {
 //       Taken: 12 T-cycles. Not taken: 8 T-cycles. Flags unaffected.
 
 test "0x38 JR C,i8: branches forward when C is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     // PC = 0x0102 after fetch, offset +4 -> 0x0106
     h.load(&.{ 0x38, 0x04 });
@@ -3404,7 +3760,8 @@ test "0x38 JR C,i8: branches forward when C is set" {
 }
 
 test "0x38 JR C,i8: branches backward when C is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     // offset = -2 (0xFE): PC = 0x0102 after fetch, then -2 = 0x0100
     h.load(&.{ 0x38, 0xFE });
@@ -3413,7 +3770,8 @@ test "0x38 JR C,i8: branches backward when C is set" {
 }
 
 test "0x38 JR C,i8: does not branch when C is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear C
     h.load(&.{ 0x38, 0x10 });
     _ = try h.step();
@@ -3421,7 +3779,8 @@ test "0x38 JR C,i8: does not branch when C is clear" {
 }
 
 test "0x38 JR C,i8: taken branch consumes 12 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{ 0x38, 0x00 });
     const cycles = try h.step();
@@ -3429,7 +3788,8 @@ test "0x38 JR C,i8: taken branch consumes 12 T-cycles" {
 }
 
 test "0x38 JR C,i8: not-taken branch consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     h.load(&.{ 0x38, 0x00 });
     const cycles = try h.step();
@@ -3437,7 +3797,8 @@ test "0x38 JR C,i8: not-taken branch consumes 8 T-cycles" {
 }
 
 test "0x38 JR C,i8: does not affect any flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{ 0x38, 0x00 });
     const f_before = h.regF();
@@ -3452,7 +3813,8 @@ test "0x38 JR C,i8: does not affect any flag" {
 //       C set if carry from bit 15, Z unaffected. 8 T-cycles.
 
 test "0x39 ADD HL,SP: adds SP to HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0100);
     h.setSP(0x0200);
     h.load(&.{0x39});
@@ -3461,7 +3823,8 @@ test "0x39 ADD HL,SP: adds SP to HL" {
 }
 
 test "0x39 ADD HL,SP: wraps on 16-bit overflow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     h.setSP(0x0001);
     h.load(&.{0x39});
@@ -3470,7 +3833,8 @@ test "0x39 ADD HL,SP: wraps on 16-bit overflow" {
 }
 
 test "0x39 ADD HL,SP: sets C on 16-bit carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xFFFF);
     h.setSP(0x0001);
     h.load(&.{0x39});
@@ -3479,7 +3843,8 @@ test "0x39 ADD HL,SP: sets C on 16-bit carry" {
 }
 
 test "0x39 ADD HL,SP: clears C when no 16-bit carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.setSP(0x0001);
     h.load(&.{0x39});
@@ -3488,7 +3853,8 @@ test "0x39 ADD HL,SP: clears C when no 16-bit carry" {
 }
 
 test "0x39 ADD HL,SP: sets H on carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0FFF);
     h.setSP(0x0001);
     h.load(&.{0x39});
@@ -3497,7 +3863,8 @@ test "0x39 ADD HL,SP: sets H on carry from bit 11" {
 }
 
 test "0x39 ADD HL,SP: clears H when no carry from bit 11" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0001);
     h.setSP(0x0001);
     h.load(&.{0x39});
@@ -3506,7 +3873,8 @@ test "0x39 ADD HL,SP: clears H when no carry from bit 11" {
 }
 
 test "0x39 ADD HL,SP: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // force N set
     h.setHL(0x0010);
     h.setSP(0x0001);
@@ -3516,7 +3884,8 @@ test "0x39 ADD HL,SP: clears N flag" {
 }
 
 test "0x39 ADD HL,SP: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     h.setHL(0x8000);
     h.setSP(0x8000);
@@ -3526,7 +3895,8 @@ test "0x39 ADD HL,SP: does not affect Z flag" {
 }
 
 test "0x39 ADD HL,SP: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x39});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -3539,7 +3909,8 @@ test "0x39 ADD HL,SP: consumes 8 T-cycles" {
 //       8 T-cycles. Flags unaffected.
 
 test "0x3A LD A,(HL-): loads byte from address in HL into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x3A});
@@ -3548,7 +3919,8 @@ test "0x3A LD A,(HL-): loads byte from address in HL into A" {
 }
 
 test "0x3A LD A,(HL-): decrements HL after the read" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x3A});
@@ -3557,7 +3929,8 @@ test "0x3A LD A,(HL-): decrements HL after the read" {
 }
 
 test "0x3A LD A,(HL-): reads from original HL address before decrement" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC001);
     h.writeMem(0xC001, 0xAB);
     h.writeMem(0xC000, 0xCD);
@@ -3567,7 +3940,8 @@ test "0x3A LD A,(HL-): reads from original HL address before decrement" {
 }
 
 test "0x3A LD A,(HL-): HL wraps from 0x0000 to 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0x0000);
     h.load(&.{0x3A});
     _ = try h.step();
@@ -3575,7 +3949,8 @@ test "0x3A LD A,(HL-): HL wraps from 0x0000 to 0xFFFF" {
 }
 
 test "0x3A LD A,(HL-): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x3A});
@@ -3585,7 +3960,8 @@ test "0x3A LD A,(HL-): does not affect flags" {
 }
 
 test "0x3A LD A,(HL-): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x3A});
@@ -3599,7 +3975,8 @@ test "0x3A LD A,(HL-): consumes 8 T-cycles" {
 // Spec: Decrement SP by 1. 8 T-cycles. Flags unaffected.
 
 test "0x3B DEC SP: decrements SP by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0x0010);
     h.load(&.{0x3B});
     _ = try h.step();
@@ -3607,7 +3984,8 @@ test "0x3B DEC SP: decrements SP by 1" {
 }
 
 test "0x3B DEC SP: wraps from 0x0000 to 0xFFFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0x0000);
     h.load(&.{0x3B});
     _ = try h.step();
@@ -3615,7 +3993,8 @@ test "0x3B DEC SP: wraps from 0x0000 to 0xFFFF" {
 }
 
 test "0x3B DEC SP: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setSP(0x0000);
     h.load(&.{0x3B});
     const f_before = h.regF();
@@ -3624,7 +4003,8 @@ test "0x3B DEC SP: does not affect flags" {
 }
 
 test "0x3B DEC SP: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x3B});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 8), cycles);
@@ -3637,7 +4017,8 @@ test "0x3B DEC SP: consumes 8 T-cycles" {
 //       wraps, C unaffected. 4 T-cycles.
 
 test "0x3C INC A: increments A by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.load(&.{0x3C});
     _ = try h.step();
@@ -3645,7 +4026,8 @@ test "0x3C INC A: increments A by 1" {
 }
 
 test "0x3C INC A: wraps from 0xFF to 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x3C});
     _ = try h.step();
@@ -3653,7 +4035,8 @@ test "0x3C INC A: wraps from 0xFF to 0x00" {
 }
 
 test "0x3C INC A: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.load(&.{0x3C});
     _ = try h.step();
@@ -3661,7 +4044,8 @@ test "0x3C INC A: sets Z when result is 0x00" {
 }
 
 test "0x3C INC A: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setA(0x00);
     h.load(&.{0x3C});
@@ -3670,7 +4054,8 @@ test "0x3C INC A: clears Z when result is non-zero" {
 }
 
 test "0x3C INC A: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // pre-set N
     h.setA(0x10);
     h.load(&.{0x3C});
@@ -3679,7 +4064,8 @@ test "0x3C INC A: clears N flag" {
 }
 
 test "0x3C INC A: sets H when lower nibble wraps (0x0F -> 0x10)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x0F);
     h.load(&.{0x3C});
     _ = try h.step();
@@ -3687,7 +4073,8 @@ test "0x3C INC A: sets H when lower nibble wraps (0x0F -> 0x10)" {
 }
 
 test "0x3C INC A: clears H when lower nibble does not wrap" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setA(0x00);
     h.load(&.{0x3C});
@@ -3696,7 +4083,8 @@ test "0x3C INC A: clears H when lower nibble does not wrap" {
 }
 
 test "0x3C INC A: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setA(0xFF);
     h.load(&.{0x3C});
@@ -3705,7 +4093,8 @@ test "0x3C INC A: does not affect C flag" {
 }
 
 test "0x3C INC A: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x3C});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -3718,7 +4107,8 @@ test "0x3C INC A: consumes 4 T-cycles" {
 //       C unaffected. 4 T-cycles.
 
 test "0x3D DEC A: decrements A by 1" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.load(&.{0x3D});
     _ = try h.step();
@@ -3726,7 +4116,8 @@ test "0x3D DEC A: decrements A by 1" {
 }
 
 test "0x3D DEC A: wraps from 0x00 to 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.load(&.{0x3D});
     _ = try h.step();
@@ -3734,7 +4125,8 @@ test "0x3D DEC A: wraps from 0x00 to 0xFF" {
 }
 
 test "0x3D DEC A: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x01);
     h.load(&.{0x3D});
     _ = try h.step();
@@ -3742,7 +4134,8 @@ test "0x3D DEC A: sets Z when result is 0x00" {
 }
 
 test "0x3D DEC A: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // pre-set Z
     h.setA(0x05);
     h.load(&.{0x3D});
@@ -3751,7 +4144,8 @@ test "0x3D DEC A: clears Z when result is non-zero" {
 }
 
 test "0x3D DEC A: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 6)); // clear N
     h.setA(0x10);
     h.load(&.{0x3D});
@@ -3760,7 +4154,8 @@ test "0x3D DEC A: sets N flag" {
 }
 
 test "0x3D DEC A: sets H when lower nibble borrows (0x10 -> 0x0F)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.load(&.{0x3D});
     _ = try h.step();
@@ -3768,7 +4163,8 @@ test "0x3D DEC A: sets H when lower nibble borrows (0x10 -> 0x0F)" {
 }
 
 test "0x3D DEC A: clears H when no borrow from upper nibble" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.setA(0x0F);
     h.load(&.{0x3D});
@@ -3777,7 +4173,8 @@ test "0x3D DEC A: clears H when no borrow from upper nibble" {
 }
 
 test "0x3D DEC A: does not affect C flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.setA(0x00);
     h.load(&.{0x3D});
@@ -3786,7 +4183,8 @@ test "0x3D DEC A: does not affect C flag" {
 }
 
 test "0x3D DEC A: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x3D});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -3798,28 +4196,32 @@ test "0x3D DEC A: consumes 4 T-cycles" {
 // Spec: Load immediate byte into A. 8 T-cycles, PC+2. Flags unaffected.
 
 test "0x3E LD A,u8: loads immediate byte into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x3E, 0xAB });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xAB), h.regA());
 }
 
 test "0x3E LD A,u8: edge case 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x3E, 0x00 });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0x00), h.regA());
 }
 
 test "0x3E LD A,u8: edge case 0xFF" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x3E, 0xFF });
     _ = try h.step();
     try std.testing.expectEqual(@as(u8, 0xFF), h.regA());
 }
 
 test "0x3E LD A,u8: consumes 8 T-cycles and advances PC by 2" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x3E, 0x00 });
     const pc_before = h.regPC();
     const cycles = try h.step();
@@ -3828,7 +4230,8 @@ test "0x3E LD A,u8: consumes 8 T-cycles and advances PC by 2" {
 }
 
 test "0x3E LD A,u8: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{ 0x3E, 0xFF });
     const f_before = h.regF();
     _ = try h.step();
@@ -3842,7 +4245,8 @@ test "0x3E LD A,u8: does not affect flags" {
 //       N and H always cleared. Z unaffected. 4 T-cycles.
 
 test "0x3F CCF: flips C from clear to set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear C
     h.load(&.{0x3F});
     _ = try h.step();
@@ -3850,7 +4254,8 @@ test "0x3F CCF: flips C from clear to set" {
 }
 
 test "0x3F CCF: flips C from set to clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.load(&.{0x3F});
     _ = try h.step();
@@ -3858,7 +4263,8 @@ test "0x3F CCF: flips C from set to clear" {
 }
 
 test "0x3F CCF: applying twice restores original C value" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
     h.load(&.{ 0x3F, 0x3F });
     _ = try h.step();
@@ -3867,7 +4273,8 @@ test "0x3F CCF: applying twice restores original C value" {
 }
 
 test "0x3F CCF: always clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6); // pre-set N
     h.load(&.{0x3F});
     _ = try h.step();
@@ -3875,7 +4282,8 @@ test "0x3F CCF: always clears N flag" {
 }
 
 test "0x3F CCF: always clears H flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5); // pre-set H
     h.load(&.{0x3F});
     _ = try h.step();
@@ -3883,7 +4291,8 @@ test "0x3F CCF: always clears H flag" {
 }
 
 test "0x3F CCF: does not affect Z flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7); // set Z
     h.load(&.{0x3F});
     _ = try h.step();
@@ -3891,7 +4300,8 @@ test "0x3F CCF: does not affect Z flag" {
 }
 
 test "0x3F CCF: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x3F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -3912,7 +4322,8 @@ test "0x3F CCF: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x40 LD B,B: B is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0x42);
     h.load(&.{0x40});
     _ = try h.step();
@@ -3920,7 +4331,8 @@ test "0x40 LD B,B: B is unchanged" {
 }
 
 test "0x40 LD B,B: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x40});
     const f_before = h.regF();
     _ = try h.step();
@@ -3928,7 +4340,8 @@ test "0x40 LD B,B: does not affect flags" {
 }
 
 test "0x40 LD B,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x40});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -3939,7 +4352,8 @@ test "0x40 LD B,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x41 LD B,C: loads C into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xAB);
     h.setB(0x00);
     h.load(&.{0x41});
@@ -3948,7 +4362,8 @@ test "0x41 LD B,C: loads C into B" {
 }
 
 test "0x41 LD B,C: does not modify C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xAB);
     h.load(&.{0x41});
     _ = try h.step();
@@ -3956,7 +4371,8 @@ test "0x41 LD B,C: does not modify C" {
 }
 
 test "0x41 LD B,C: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x41});
     const f_before = h.regF();
     _ = try h.step();
@@ -3964,7 +4380,8 @@ test "0x41 LD B,C: does not affect flags" {
 }
 
 test "0x41 LD B,C: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x41});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -3975,7 +4392,8 @@ test "0x41 LD B,C: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x42 LD B,D: loads D into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0xCD);
     h.setB(0x00);
     h.load(&.{0x42});
@@ -3984,7 +4402,8 @@ test "0x42 LD B,D: loads D into B" {
 }
 
 test "0x42 LD B,D: does not modify D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0xCD);
     h.load(&.{0x42});
     _ = try h.step();
@@ -3992,7 +4411,8 @@ test "0x42 LD B,D: does not modify D" {
 }
 
 test "0x42 LD B,D: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x42});
     const f_before = h.regF();
     _ = try h.step();
@@ -4000,7 +4420,8 @@ test "0x42 LD B,D: does not affect flags" {
 }
 
 test "0x42 LD B,D: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x42});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4011,7 +4432,8 @@ test "0x42 LD B,D: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x43 LD B,E: loads E into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x11);
     h.setB(0x00);
     h.load(&.{0x43});
@@ -4020,7 +4442,8 @@ test "0x43 LD B,E: loads E into B" {
 }
 
 test "0x43 LD B,E: does not modify E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x11);
     h.load(&.{0x43});
     _ = try h.step();
@@ -4028,7 +4451,8 @@ test "0x43 LD B,E: does not modify E" {
 }
 
 test "0x43 LD B,E: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x43});
     const f_before = h.regF();
     _ = try h.step();
@@ -4036,7 +4460,8 @@ test "0x43 LD B,E: does not affect flags" {
 }
 
 test "0x43 LD B,E: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x43});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4047,7 +4472,8 @@ test "0x43 LD B,E: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x44 LD B,H: loads H into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.setB(0x00);
     h.load(&.{0x44});
@@ -4056,7 +4482,8 @@ test "0x44 LD B,H: loads H into B" {
 }
 
 test "0x44 LD B,H: does not modify H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.load(&.{0x44});
     _ = try h.step();
@@ -4064,7 +4491,8 @@ test "0x44 LD B,H: does not modify H" {
 }
 
 test "0x44 LD B,H: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x44});
     const f_before = h.regF();
     _ = try h.step();
@@ -4072,7 +4500,8 @@ test "0x44 LD B,H: does not affect flags" {
 }
 
 test "0x44 LD B,H: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x44});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4083,7 +4512,8 @@ test "0x44 LD B,H: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x45 LD B,L: loads L into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.setB(0x00);
     h.load(&.{0x45});
@@ -4092,7 +4522,8 @@ test "0x45 LD B,L: loads L into B" {
 }
 
 test "0x45 LD B,L: does not modify L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.load(&.{0x45});
     _ = try h.step();
@@ -4100,7 +4531,8 @@ test "0x45 LD B,L: does not modify L" {
 }
 
 test "0x45 LD B,L: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x45});
     const f_before = h.regF();
     _ = try h.step();
@@ -4108,7 +4540,8 @@ test "0x45 LD B,L: does not affect flags" {
 }
 
 test "0x45 LD B,L: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x45});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4119,7 +4552,8 @@ test "0x45 LD B,L: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x46 LD B,(HL): loads byte from address in HL into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x46});
@@ -4128,7 +4562,8 @@ test "0x46 LD B,(HL): loads byte from address in HL into B" {
 }
 
 test "0x46 LD B,(HL): does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x46});
@@ -4137,7 +4572,8 @@ test "0x46 LD B,(HL): does not modify HL" {
 }
 
 test "0x46 LD B,(HL): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x46});
@@ -4147,7 +4583,8 @@ test "0x46 LD B,(HL): does not affect flags" {
 }
 
 test "0x46 LD B,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x46});
@@ -4160,7 +4597,8 @@ test "0x46 LD B,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x47 LD B,A: loads A into B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.setB(0x00);
     h.load(&.{0x47});
@@ -4169,7 +4607,8 @@ test "0x47 LD B,A: loads A into B" {
 }
 
 test "0x47 LD B,A: does not modify A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.load(&.{0x47});
     _ = try h.step();
@@ -4177,7 +4616,8 @@ test "0x47 LD B,A: does not modify A" {
 }
 
 test "0x47 LD B,A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x47});
     const f_before = h.regF();
     _ = try h.step();
@@ -4185,7 +4625,8 @@ test "0x47 LD B,A: does not affect flags" {
 }
 
 test "0x47 LD B,A: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x47});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4196,7 +4637,8 @@ test "0x47 LD B,A: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x48 LD C,B: loads B into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.setC(0x00);
     h.load(&.{0x48});
@@ -4205,7 +4647,8 @@ test "0x48 LD C,B: loads B into C" {
 }
 
 test "0x48 LD C,B: does not modify B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.load(&.{0x48});
     _ = try h.step();
@@ -4213,7 +4656,8 @@ test "0x48 LD C,B: does not modify B" {
 }
 
 test "0x48 LD C,B: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x48});
     const f_before = h.regF();
     _ = try h.step();
@@ -4221,7 +4665,8 @@ test "0x48 LD C,B: does not affect flags" {
 }
 
 test "0x48 LD C,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x48});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4232,7 +4677,8 @@ test "0x48 LD C,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x49 LD C,C: C is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0x42);
     h.load(&.{0x49});
     _ = try h.step();
@@ -4240,7 +4686,8 @@ test "0x49 LD C,C: C is unchanged" {
 }
 
 test "0x49 LD C,C: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x49});
     const f_before = h.regF();
     _ = try h.step();
@@ -4248,7 +4695,8 @@ test "0x49 LD C,C: does not affect flags" {
 }
 
 test "0x49 LD C,C: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x49});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4259,7 +4707,8 @@ test "0x49 LD C,C: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x4A LD C,D: loads D into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0xCD);
     h.setC(0x00);
     h.load(&.{0x4A});
@@ -4268,7 +4717,8 @@ test "0x4A LD C,D: loads D into C" {
 }
 
 test "0x4A LD C,D: does not modify D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0xCD);
     h.load(&.{0x4A});
     _ = try h.step();
@@ -4276,7 +4726,8 @@ test "0x4A LD C,D: does not modify D" {
 }
 
 test "0x4A LD C,D: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4A});
     const f_before = h.regF();
     _ = try h.step();
@@ -4284,7 +4735,8 @@ test "0x4A LD C,D: does not affect flags" {
 }
 
 test "0x4A LD C,D: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4A});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4295,7 +4747,8 @@ test "0x4A LD C,D: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x4B LD C,E: loads E into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x11);
     h.setC(0x00);
     h.load(&.{0x4B});
@@ -4304,7 +4757,8 @@ test "0x4B LD C,E: loads E into C" {
 }
 
 test "0x4B LD C,E: does not modify E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x11);
     h.load(&.{0x4B});
     _ = try h.step();
@@ -4312,7 +4766,8 @@ test "0x4B LD C,E: does not modify E" {
 }
 
 test "0x4B LD C,E: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4B});
     const f_before = h.regF();
     _ = try h.step();
@@ -4320,7 +4775,8 @@ test "0x4B LD C,E: does not affect flags" {
 }
 
 test "0x4B LD C,E: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4B});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4331,7 +4787,8 @@ test "0x4B LD C,E: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x4C LD C,H: loads H into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.setC(0x00);
     h.load(&.{0x4C});
@@ -4340,7 +4797,8 @@ test "0x4C LD C,H: loads H into C" {
 }
 
 test "0x4C LD C,H: does not modify H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.load(&.{0x4C});
     _ = try h.step();
@@ -4348,7 +4806,8 @@ test "0x4C LD C,H: does not modify H" {
 }
 
 test "0x4C LD C,H: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4C});
     const f_before = h.regF();
     _ = try h.step();
@@ -4356,7 +4815,8 @@ test "0x4C LD C,H: does not affect flags" {
 }
 
 test "0x4C LD C,H: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4C});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4367,7 +4827,8 @@ test "0x4C LD C,H: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x4D LD C,L: loads L into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.setC(0x00);
     h.load(&.{0x4D});
@@ -4376,7 +4837,8 @@ test "0x4D LD C,L: loads L into C" {
 }
 
 test "0x4D LD C,L: does not modify L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.load(&.{0x4D});
     _ = try h.step();
@@ -4384,7 +4846,8 @@ test "0x4D LD C,L: does not modify L" {
 }
 
 test "0x4D LD C,L: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4D});
     const f_before = h.regF();
     _ = try h.step();
@@ -4392,7 +4855,8 @@ test "0x4D LD C,L: does not affect flags" {
 }
 
 test "0x4D LD C,L: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4D});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4403,7 +4867,8 @@ test "0x4D LD C,L: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x4E LD C,(HL): loads byte from address in HL into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x4E});
@@ -4412,7 +4877,8 @@ test "0x4E LD C,(HL): loads byte from address in HL into C" {
 }
 
 test "0x4E LD C,(HL): does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x4E});
@@ -4421,7 +4887,8 @@ test "0x4E LD C,(HL): does not modify HL" {
 }
 
 test "0x4E LD C,(HL): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x4E});
@@ -4431,7 +4898,8 @@ test "0x4E LD C,(HL): does not affect flags" {
 }
 
 test "0x4E LD C,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x4E});
@@ -4444,7 +4912,8 @@ test "0x4E LD C,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x4F LD C,A: loads A into C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.setC(0x00);
     h.load(&.{0x4F});
@@ -4453,7 +4922,8 @@ test "0x4F LD C,A: loads A into C" {
 }
 
 test "0x4F LD C,A: does not modify A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.load(&.{0x4F});
     _ = try h.step();
@@ -4461,7 +4931,8 @@ test "0x4F LD C,A: does not modify A" {
 }
 
 test "0x4F LD C,A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4F});
     const f_before = h.regF();
     _ = try h.step();
@@ -4469,7 +4940,8 @@ test "0x4F LD C,A: does not affect flags" {
 }
 
 test "0x4F LD C,A: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x4F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4490,7 +4962,8 @@ test "0x4F LD C,A: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x50 LD D,B: loads B into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.setD(0x00);
     h.load(&.{0x50});
@@ -4499,7 +4972,8 @@ test "0x50 LD D,B: loads B into D" {
 }
 
 test "0x50 LD D,B: does not modify B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.load(&.{0x50});
     _ = try h.step();
@@ -4507,7 +4981,8 @@ test "0x50 LD D,B: does not modify B" {
 }
 
 test "0x50 LD D,B: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x50});
     const f_before = h.regF();
     _ = try h.step();
@@ -4515,7 +4990,8 @@ test "0x50 LD D,B: does not affect flags" {
 }
 
 test "0x50 LD D,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x50});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4526,7 +5002,8 @@ test "0x50 LD D,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x51 LD D,C: loads C into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.setD(0x00);
     h.load(&.{0x51});
@@ -4535,7 +5012,8 @@ test "0x51 LD D,C: loads C into D" {
 }
 
 test "0x51 LD D,C: does not modify C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.load(&.{0x51});
     _ = try h.step();
@@ -4543,7 +5021,8 @@ test "0x51 LD D,C: does not modify C" {
 }
 
 test "0x51 LD D,C: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x51});
     const f_before = h.regF();
     _ = try h.step();
@@ -4551,7 +5030,8 @@ test "0x51 LD D,C: does not affect flags" {
 }
 
 test "0x51 LD D,C: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x51});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4562,7 +5042,8 @@ test "0x51 LD D,C: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x52 LD D,D: D is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x42);
     h.load(&.{0x52});
     _ = try h.step();
@@ -4570,7 +5051,8 @@ test "0x52 LD D,D: D is unchanged" {
 }
 
 test "0x52 LD D,D: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x52});
     const f_before = h.regF();
     _ = try h.step();
@@ -4578,7 +5060,8 @@ test "0x52 LD D,D: does not affect flags" {
 }
 
 test "0x52 LD D,D: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x52});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4589,7 +5072,8 @@ test "0x52 LD D,D: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x53 LD D,E: loads E into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x11);
     h.setD(0x00);
     h.load(&.{0x53});
@@ -4598,7 +5082,8 @@ test "0x53 LD D,E: loads E into D" {
 }
 
 test "0x53 LD D,E: does not modify E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x11);
     h.load(&.{0x53});
     _ = try h.step();
@@ -4606,7 +5091,8 @@ test "0x53 LD D,E: does not modify E" {
 }
 
 test "0x53 LD D,E: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x53});
     const f_before = h.regF();
     _ = try h.step();
@@ -4614,7 +5100,8 @@ test "0x53 LD D,E: does not affect flags" {
 }
 
 test "0x53 LD D,E: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x53});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4625,7 +5112,8 @@ test "0x53 LD D,E: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x54 LD D,H: loads H into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.setD(0x00);
     h.load(&.{0x54});
@@ -4634,7 +5122,8 @@ test "0x54 LD D,H: loads H into D" {
 }
 
 test "0x54 LD D,H: does not modify H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.load(&.{0x54});
     _ = try h.step();
@@ -4642,7 +5131,8 @@ test "0x54 LD D,H: does not modify H" {
 }
 
 test "0x54 LD D,H: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x54});
     const f_before = h.regF();
     _ = try h.step();
@@ -4650,7 +5140,8 @@ test "0x54 LD D,H: does not affect flags" {
 }
 
 test "0x54 LD D,H: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x54});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4661,7 +5152,8 @@ test "0x54 LD D,H: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x55 LD D,L: loads L into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.setD(0x00);
     h.load(&.{0x55});
@@ -4670,7 +5162,8 @@ test "0x55 LD D,L: loads L into D" {
 }
 
 test "0x55 LD D,L: does not modify L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.load(&.{0x55});
     _ = try h.step();
@@ -4678,7 +5171,8 @@ test "0x55 LD D,L: does not modify L" {
 }
 
 test "0x55 LD D,L: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x55});
     const f_before = h.regF();
     _ = try h.step();
@@ -4686,7 +5180,8 @@ test "0x55 LD D,L: does not affect flags" {
 }
 
 test "0x55 LD D,L: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x55});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4697,7 +5192,8 @@ test "0x55 LD D,L: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x56 LD D,(HL): loads byte from address in HL into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x56});
@@ -4706,7 +5202,8 @@ test "0x56 LD D,(HL): loads byte from address in HL into D" {
 }
 
 test "0x56 LD D,(HL): does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x56});
@@ -4715,7 +5212,8 @@ test "0x56 LD D,(HL): does not modify HL" {
 }
 
 test "0x56 LD D,(HL): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x56});
@@ -4725,7 +5223,8 @@ test "0x56 LD D,(HL): does not affect flags" {
 }
 
 test "0x56 LD D,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x56});
@@ -4738,7 +5237,8 @@ test "0x56 LD D,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x57 LD D,A: loads A into D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.setD(0x00);
     h.load(&.{0x57});
@@ -4747,7 +5247,8 @@ test "0x57 LD D,A: loads A into D" {
 }
 
 test "0x57 LD D,A: does not modify A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.load(&.{0x57});
     _ = try h.step();
@@ -4755,7 +5256,8 @@ test "0x57 LD D,A: does not modify A" {
 }
 
 test "0x57 LD D,A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x57});
     const f_before = h.regF();
     _ = try h.step();
@@ -4763,7 +5265,8 @@ test "0x57 LD D,A: does not affect flags" {
 }
 
 test "0x57 LD D,A: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x57});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4774,7 +5277,8 @@ test "0x57 LD D,A: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x58 LD E,B: loads B into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.setE(0x00);
     h.load(&.{0x58});
@@ -4783,7 +5287,8 @@ test "0x58 LD E,B: loads B into E" {
 }
 
 test "0x58 LD E,B: does not modify B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.load(&.{0x58});
     _ = try h.step();
@@ -4791,7 +5296,8 @@ test "0x58 LD E,B: does not modify B" {
 }
 
 test "0x58 LD E,B: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x58});
     const f_before = h.regF();
     _ = try h.step();
@@ -4799,7 +5305,8 @@ test "0x58 LD E,B: does not affect flags" {
 }
 
 test "0x58 LD E,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x58});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4810,7 +5317,8 @@ test "0x58 LD E,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x59 LD E,C: loads C into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.setE(0x00);
     h.load(&.{0x59});
@@ -4819,7 +5327,8 @@ test "0x59 LD E,C: loads C into E" {
 }
 
 test "0x59 LD E,C: does not modify C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.load(&.{0x59});
     _ = try h.step();
@@ -4827,7 +5336,8 @@ test "0x59 LD E,C: does not modify C" {
 }
 
 test "0x59 LD E,C: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x59});
     const f_before = h.regF();
     _ = try h.step();
@@ -4835,7 +5345,8 @@ test "0x59 LD E,C: does not affect flags" {
 }
 
 test "0x59 LD E,C: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x59});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4846,7 +5357,8 @@ test "0x59 LD E,C: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x5A LD E,D: loads D into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x11);
     h.setE(0x00);
     h.load(&.{0x5A});
@@ -4855,7 +5367,8 @@ test "0x5A LD E,D: loads D into E" {
 }
 
 test "0x5A LD E,D: does not modify D" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x11);
     h.load(&.{0x5A});
     _ = try h.step();
@@ -4863,7 +5376,8 @@ test "0x5A LD E,D: does not modify D" {
 }
 
 test "0x5A LD E,D: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5A});
     const f_before = h.regF();
     _ = try h.step();
@@ -4871,7 +5385,8 @@ test "0x5A LD E,D: does not affect flags" {
 }
 
 test "0x5A LD E,D: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5A});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4882,7 +5397,8 @@ test "0x5A LD E,D: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x5B LD E,E: E is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x42);
     h.load(&.{0x5B});
     _ = try h.step();
@@ -4890,7 +5406,8 @@ test "0x5B LD E,E: E is unchanged" {
 }
 
 test "0x5B LD E,E: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5B});
     const f_before = h.regF();
     _ = try h.step();
@@ -4898,7 +5415,8 @@ test "0x5B LD E,E: does not affect flags" {
 }
 
 test "0x5B LD E,E: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5B});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4909,7 +5427,8 @@ test "0x5B LD E,E: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x5C LD E,H: loads H into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.setE(0x00);
     h.load(&.{0x5C});
@@ -4918,7 +5437,8 @@ test "0x5C LD E,H: loads H into E" {
 }
 
 test "0x5C LD E,H: does not modify H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x22);
     h.load(&.{0x5C});
     _ = try h.step();
@@ -4926,7 +5446,8 @@ test "0x5C LD E,H: does not modify H" {
 }
 
 test "0x5C LD E,H: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5C});
     const f_before = h.regF();
     _ = try h.step();
@@ -4934,7 +5455,8 @@ test "0x5C LD E,H: does not affect flags" {
 }
 
 test "0x5C LD E,H: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5C});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4945,7 +5467,8 @@ test "0x5C LD E,H: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x5D LD E,L: loads L into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.setE(0x00);
     h.load(&.{0x5D});
@@ -4954,7 +5477,8 @@ test "0x5D LD E,L: loads L into E" {
 }
 
 test "0x5D LD E,L: does not modify L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x33);
     h.load(&.{0x5D});
     _ = try h.step();
@@ -4962,7 +5486,8 @@ test "0x5D LD E,L: does not modify L" {
 }
 
 test "0x5D LD E,L: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5D});
     const f_before = h.regF();
     _ = try h.step();
@@ -4970,7 +5495,8 @@ test "0x5D LD E,L: does not affect flags" {
 }
 
 test "0x5D LD E,L: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5D});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -4981,7 +5507,8 @@ test "0x5D LD E,L: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x5E LD E,(HL): loads byte from address in HL into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x5E});
@@ -4990,7 +5517,8 @@ test "0x5E LD E,(HL): loads byte from address in HL into E" {
 }
 
 test "0x5E LD E,(HL): does not modify HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x5E});
@@ -4999,7 +5527,8 @@ test "0x5E LD E,(HL): does not modify HL" {
 }
 
 test "0x5E LD E,(HL): does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0xFF);
     h.load(&.{0x5E});
@@ -5009,7 +5538,8 @@ test "0x5E LD E,(HL): does not affect flags" {
 }
 
 test "0x5E LD E,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x5E});
@@ -5022,7 +5552,8 @@ test "0x5E LD E,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x5F LD E,A: loads A into E" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.setE(0x00);
     h.load(&.{0x5F});
@@ -5031,7 +5562,8 @@ test "0x5F LD E,A: loads A into E" {
 }
 
 test "0x5F LD E,A: does not modify A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.load(&.{0x5F});
     _ = try h.step();
@@ -5039,7 +5571,8 @@ test "0x5F LD E,A: does not modify A" {
 }
 
 test "0x5F LD E,A: does not affect flags" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5F});
     const f_before = h.regF();
     _ = try h.step();
@@ -5047,7 +5580,8 @@ test "0x5F LD E,A: does not affect flags" {
 }
 
 test "0x5F LD E,A: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x5F});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -5069,7 +5603,8 @@ test "0x5F LD E,A: consumes 4 T-cycles" {
 // proven uniform across the entire LD r,r block.
 
 test "0x60 LD H,B: loads B into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.setH(0x00);
     h.load(&.{0x60});
@@ -5078,7 +5613,8 @@ test "0x60 LD H,B: loads B into H" {
 }
 
 test "0x61 LD H,C: loads C into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.setH(0x00);
     h.load(&.{0x61});
@@ -5087,7 +5623,8 @@ test "0x61 LD H,C: loads C into H" {
 }
 
 test "0x62 LD H,D: loads D into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x11);
     h.setH(0x00);
     h.load(&.{0x62});
@@ -5096,7 +5633,8 @@ test "0x62 LD H,D: loads D into H" {
 }
 
 test "0x63 LD H,E: loads E into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x22);
     h.setH(0x00);
     h.load(&.{0x63});
@@ -5105,7 +5643,8 @@ test "0x63 LD H,E: loads E into H" {
 }
 
 test "0x64 LD H,H: H is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x42);
     h.load(&.{0x64});
     _ = try h.step();
@@ -5113,7 +5652,8 @@ test "0x64 LD H,H: H is unchanged" {
 }
 
 test "0x65 LD H,L: loads L into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // Set L without disturbing H via the 16-bit setter
     h.cpu.registers.hl.parts.l = 0x33;
     h.cpu.registers.hl.parts.h = 0x00;
@@ -5123,7 +5663,8 @@ test "0x65 LD H,L: loads L into H" {
 }
 
 test "0x66 LD H,(HL): loads byte from address in HL into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // HL = 0xC010, mem[0xC010] = 0x55
     // After: H = 0x55, so HL = 0x5510 (L unchanged)
     h.setHL(0xC010);
@@ -5134,7 +5675,8 @@ test "0x66 LD H,(HL): loads byte from address in HL into H" {
 }
 
 test "0x66 LD H,(HL): reads address before overwriting H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // HL = 0xC010 — the address used must be the original HL, not post-write
     h.setHL(0xC010);
     h.writeMem(0xC010, 0xAB);
@@ -5145,7 +5687,8 @@ test "0x66 LD H,(HL): reads address before overwriting H" {
 }
 
 test "0x66 LD H,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x66});
@@ -5154,7 +5697,8 @@ test "0x66 LD H,(HL): consumes 8 T-cycles" {
 }
 
 test "0x67 LD H,A: loads A into H" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.setH(0x00);
     h.load(&.{0x67});
@@ -5163,7 +5707,8 @@ test "0x67 LD H,A: loads A into H" {
 }
 
 test "0x68 LD L,B: loads B into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.setL(0x00);
     h.load(&.{0x68});
@@ -5172,7 +5717,8 @@ test "0x68 LD L,B: loads B into L" {
 }
 
 test "0x69 LD L,C: loads C into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.setL(0x00);
     h.load(&.{0x69});
@@ -5181,7 +5727,8 @@ test "0x69 LD L,C: loads C into L" {
 }
 
 test "0x6A LD L,D: loads D into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x11);
     h.setL(0x00);
     h.load(&.{0x6A});
@@ -5190,7 +5737,8 @@ test "0x6A LD L,D: loads D into L" {
 }
 
 test "0x6B LD L,E: loads E into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x22);
     h.setL(0x00);
     h.load(&.{0x6B});
@@ -5199,7 +5747,8 @@ test "0x6B LD L,E: loads E into L" {
 }
 
 test "0x6C LD L,H: loads H into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.hl.parts.h = 0x33;
     h.cpu.registers.hl.parts.l = 0x00;
     h.load(&.{0x6C});
@@ -5208,7 +5757,8 @@ test "0x6C LD L,H: loads H into L" {
 }
 
 test "0x6D LD L,L: L is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x42);
     h.load(&.{0x6D});
     _ = try h.step();
@@ -5216,7 +5766,8 @@ test "0x6D LD L,L: L is unchanged" {
 }
 
 test "0x6E LD L,(HL): loads byte from address in HL into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // HL = 0xC000, mem[0xC000] = 0x55
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
@@ -5226,7 +5777,8 @@ test "0x6E LD L,(HL): loads byte from address in HL into L" {
 }
 
 test "0x6E LD L,(HL): reads address before overwriting L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // HL = 0xC010 — address used must be the original HL
     h.setHL(0xC010);
     h.writeMem(0xC010, 0xAB);
@@ -5236,7 +5788,8 @@ test "0x6E LD L,(HL): reads address before overwriting L" {
 }
 
 test "0x6E LD L,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x6E});
@@ -5245,7 +5798,8 @@ test "0x6E LD L,(HL): consumes 8 T-cycles" {
 }
 
 test "0x6F LD L,A: loads A into L" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x77);
     h.setL(0x00);
     h.load(&.{0x6F});
@@ -5271,7 +5825,8 @@ test "0x6F LD L,A: loads A into L" {
 // ---------------------------------------------------------------------------
 
 test "0x70 LD (HL),B: writes B to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setB(0xAB);
     h.load(&.{0x70});
@@ -5280,7 +5835,8 @@ test "0x70 LD (HL),B: writes B to address in HL" {
 }
 
 test "0x70 LD (HL),B: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{0x70});
     const cycles = try h.step();
@@ -5288,7 +5844,8 @@ test "0x70 LD (HL),B: consumes 8 T-cycles" {
 }
 
 test "0x71 LD (HL),C: writes C to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setC(0xCD);
     h.load(&.{0x71});
@@ -5297,7 +5854,8 @@ test "0x71 LD (HL),C: writes C to address in HL" {
 }
 
 test "0x72 LD (HL),D: writes D to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setD(0x11);
     h.load(&.{0x72});
@@ -5306,7 +5864,8 @@ test "0x72 LD (HL),D: writes D to address in HL" {
 }
 
 test "0x73 LD (HL),E: writes E to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setE(0x22);
     h.load(&.{0x73});
@@ -5315,7 +5874,8 @@ test "0x73 LD (HL),E: writes E to address in HL" {
 }
 
 test "0x74 LD (HL),H: writes H to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // HL = 0xC0FF -> H = 0xC0, write 0xC0 to address 0xC0FF
     h.setHL(0xC0FF);
     h.load(&.{0x74});
@@ -5324,7 +5884,8 @@ test "0x74 LD (HL),H: writes H to address in HL" {
 }
 
 test "0x74 LD (HL),H: uses original HL address not post-write address" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // H=0xC0, L=0x10 -> HL=0xC010, writes 0xC0 to 0xC010
     h.setHL(0xC010);
     h.load(&.{0x74});
@@ -5333,7 +5894,8 @@ test "0x74 LD (HL),H: uses original HL address not post-write address" {
 }
 
 test "0x75 LD (HL),L: writes L to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // HL = 0xC0FF -> L = 0xFF, write 0xFF to address 0xC0FF
     h.setHL(0xC0FF);
     h.load(&.{0x75});
@@ -5342,7 +5904,8 @@ test "0x75 LD (HL),L: writes L to address in HL" {
 }
 
 test "0x75 LD (HL),L: uses original HL address not post-write address" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // H=0xC0, L=0x10 -> HL=0xC010, writes 0x10 to 0xC010
     h.setHL(0xC010);
     h.load(&.{0x75});
@@ -5355,14 +5918,16 @@ test "0x75 LD (HL),L: uses original HL address not post-write address" {
 // ---------------------------------------------------------------------------
 
 test "0x76 HALT: returns NotYetSupportedOpcode error" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x76});
     const result = h.step();
     try std.testing.expectError(error.NotYetSupportedOpcode, result);
 }
 
 test "0x76 HALT: does not advance PC past the opcode" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x76});
     const pc_before = h.regPC();
     _ = h.step() catch {};
@@ -5375,7 +5940,8 @@ test "0x76 HALT: does not advance PC past the opcode" {
 // ---------------------------------------------------------------------------
 
 test "0x77 LD (HL),A: writes A to address in HL" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.setA(0x77);
     h.load(&.{0x77});
@@ -5384,7 +5950,8 @@ test "0x77 LD (HL),A: writes A to address in HL" {
 }
 
 test "0x77 LD (HL),A: consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.load(&.{0x77});
     const cycles = try h.step();
@@ -5396,7 +5963,8 @@ test "0x77 LD (HL),A: consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x78 LD A,B: loads B into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setB(0xAB);
     h.setA(0x00);
     h.load(&.{0x78});
@@ -5405,7 +5973,8 @@ test "0x78 LD A,B: loads B into A" {
 }
 
 test "0x79 LD A,C: loads C into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setC(0xCD);
     h.setA(0x00);
     h.load(&.{0x79});
@@ -5414,7 +5983,8 @@ test "0x79 LD A,C: loads C into A" {
 }
 
 test "0x7A LD A,D: loads D into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setD(0x11);
     h.setA(0x00);
     h.load(&.{0x7A});
@@ -5423,7 +5993,8 @@ test "0x7A LD A,D: loads D into A" {
 }
 
 test "0x7B LD A,E: loads E into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setE(0x22);
     h.setA(0x00);
     h.load(&.{0x7B});
@@ -5432,7 +6003,8 @@ test "0x7B LD A,E: loads E into A" {
 }
 
 test "0x7C LD A,H: loads H into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setH(0x33);
     h.setA(0x00);
     h.load(&.{0x7C});
@@ -5441,7 +6013,8 @@ test "0x7C LD A,H: loads H into A" {
 }
 
 test "0x7D LD A,L: loads L into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setL(0x44);
     h.setA(0x00);
     h.load(&.{0x7D});
@@ -5450,7 +6023,8 @@ test "0x7D LD A,L: loads L into A" {
 }
 
 test "0x7E LD A,(HL): loads byte from address in HL into A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x55);
     h.load(&.{0x7E});
@@ -5459,7 +6033,8 @@ test "0x7E LD A,(HL): loads byte from address in HL into A" {
 }
 
 test "0x7E LD A,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x7E});
@@ -5468,7 +6043,8 @@ test "0x7E LD A,(HL): consumes 8 T-cycles" {
 }
 
 test "0x7F LD A,A: A is unchanged" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.load(&.{0x7F});
     _ = try h.step();
@@ -5490,7 +6066,8 @@ test "0x7F LD A,A: A is unchanged" {
 // ---------------------------------------------------------------------------
 
 test "0x80 ADD A,B: adds B to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setB(0x20);
     h.load(&.{0x80});
@@ -5499,7 +6076,8 @@ test "0x80 ADD A,B: adds B to A" {
 }
 
 test "0x80 ADD A,B: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.setB(0x00);
     h.load(&.{0x80});
@@ -5508,7 +6086,8 @@ test "0x80 ADD A,B: sets Z when result is 0x00" {
 }
 
 test "0x80 ADD A,B: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.setA(0x01);
     h.setB(0x01);
@@ -5518,7 +6097,8 @@ test "0x80 ADD A,B: clears Z when result is non-zero" {
 }
 
 test "0x80 ADD A,B: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6);
     h.setA(0x01);
     h.setB(0x01);
@@ -5528,7 +6108,8 @@ test "0x80 ADD A,B: clears N flag" {
 }
 
 test "0x80 ADD A,B: sets H on carry from bit 3" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x0F);
     h.setB(0x01);
     h.load(&.{0x80});
@@ -5537,7 +6118,8 @@ test "0x80 ADD A,B: sets H on carry from bit 3" {
 }
 
 test "0x80 ADD A,B: clears H when no carry from bit 3" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5);
     h.setA(0x01);
     h.setB(0x01);
@@ -5547,7 +6129,8 @@ test "0x80 ADD A,B: clears H when no carry from bit 3" {
 }
 
 test "0x80 ADD A,B: sets C on carry from bit 7" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.setB(0x01);
     h.load(&.{0x80});
@@ -5556,7 +6139,8 @@ test "0x80 ADD A,B: sets C on carry from bit 7" {
 }
 
 test "0x80 ADD A,B: clears C when no carry from bit 7" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.setA(0x01);
     h.setB(0x01);
@@ -5566,7 +6150,8 @@ test "0x80 ADD A,B: clears C when no carry from bit 7" {
 }
 
 test "0x80 ADD A,B: wraps result on overflow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0xFF);
     h.setB(0x01);
     h.load(&.{0x80});
@@ -5575,7 +6160,8 @@ test "0x80 ADD A,B: wraps result on overflow" {
 }
 
 test "0x80 ADD A,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x80});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -5586,7 +6172,8 @@ test "0x80 ADD A,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x81 ADD A,C: adds C to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setC(0x05);
     h.load(&.{0x81});
@@ -5595,7 +6182,8 @@ test "0x81 ADD A,C: adds C to A" {
 }
 
 test "0x82 ADD A,D: adds D to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setD(0x05);
     h.load(&.{0x82});
@@ -5604,7 +6192,8 @@ test "0x82 ADD A,D: adds D to A" {
 }
 
 test "0x83 ADD A,E: adds E to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setE(0x05);
     h.load(&.{0x83});
@@ -5613,7 +6202,8 @@ test "0x83 ADD A,E: adds E to A" {
 }
 
 test "0x84 ADD A,H: adds H to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setH(0x05);
     h.load(&.{0x84});
@@ -5622,7 +6212,8 @@ test "0x84 ADD A,H: adds H to A" {
 }
 
 test "0x85 ADD A,L: adds L to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setL(0x05);
     h.load(&.{0x85});
@@ -5635,7 +6226,8 @@ test "0x85 ADD A,L: adds L to A" {
 // ---------------------------------------------------------------------------
 
 test "0x86 ADD A,(HL): adds byte at address in HL to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x05);
@@ -5645,7 +6237,8 @@ test "0x86 ADD A,(HL): adds byte at address in HL to A" {
 }
 
 test "0x86 ADD A,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x86});
@@ -5658,7 +6251,8 @@ test "0x86 ADD A,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x87 ADD A,A: doubles A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.load(&.{0x87});
     _ = try h.step();
@@ -5666,7 +6260,8 @@ test "0x87 ADD A,A: doubles A" {
 }
 
 test "0x87 ADD A,A: sets C when A >= 0x80 (result overflows)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x80);
     h.load(&.{0x87});
     _ = try h.step();
@@ -5679,7 +6274,8 @@ test "0x87 ADD A,A: sets C when A >= 0x80 (result overflows)" {
 // Full flag coverage for ADC — carry is included in all threshold checks.
 
 test "0x88 ADC A,B: adds B and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setB(0x20);
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
@@ -5689,7 +6285,8 @@ test "0x88 ADC A,B: adds B and carry to A" {
 }
 
 test "0x88 ADC A,B: adds B to A when carry is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setB(0x20);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4)); // clear C
@@ -5699,7 +6296,8 @@ test "0x88 ADC A,B: adds B to A when carry is clear" {
 }
 
 test "0x88 ADC A,B: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0xFF + 0x00 + carry=1 = 0x100 -> wraps to 0x00
     h.setA(0xFF);
     h.setB(0x00);
@@ -5710,7 +6308,8 @@ test "0x88 ADC A,B: sets Z when result is 0x00" {
 }
 
 test "0x88 ADC A,B: clears N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 6);
     h.setA(0x01);
     h.setB(0x01);
@@ -5720,7 +6319,8 @@ test "0x88 ADC A,B: clears N flag" {
 }
 
 test "0x88 ADC A,B: sets H when carry tips over bit 3 threshold" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x0F + 0x00 + carry=1 -> lower nibble 0x0F + 0x01 = 0x10 -> H set
     h.setA(0x0F);
     h.setB(0x00);
@@ -5731,7 +6331,8 @@ test "0x88 ADC A,B: sets H when carry tips over bit 3 threshold" {
 }
 
 test "0x88 ADC A,B: sets C when carry tips over bit 7 threshold" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0xFF + 0x00 + carry=1 = 0x100 -> C set
     h.setA(0xFF);
     h.setB(0x00);
@@ -5742,7 +6343,8 @@ test "0x88 ADC A,B: sets C when carry tips over bit 7 threshold" {
 }
 
 test "0x88 ADC A,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x88});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -5753,7 +6355,8 @@ test "0x88 ADC A,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x89 ADC A,C: adds C and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setC(0x05);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -5763,7 +6366,8 @@ test "0x89 ADC A,C: adds C and carry to A" {
 }
 
 test "0x8A ADC A,D: adds D and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setD(0x05);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -5773,7 +6377,8 @@ test "0x8A ADC A,D: adds D and carry to A" {
 }
 
 test "0x8B ADC A,E: adds E and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setE(0x05);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -5783,7 +6388,8 @@ test "0x8B ADC A,E: adds E and carry to A" {
 }
 
 test "0x8C ADC A,H: adds H and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setH(0x05);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -5793,7 +6399,8 @@ test "0x8C ADC A,H: adds H and carry to A" {
 }
 
 test "0x8D ADC A,L: adds L and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setL(0x05);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -5807,7 +6414,8 @@ test "0x8D ADC A,L: adds L and carry to A" {
 // ---------------------------------------------------------------------------
 
 test "0x8E ADC A,(HL): adds byte at address in HL and carry to A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x05);
@@ -5818,7 +6426,8 @@ test "0x8E ADC A,(HL): adds byte at address in HL and carry to A" {
 }
 
 test "0x8E ADC A,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x8E});
@@ -5831,7 +6440,8 @@ test "0x8E ADC A,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x8F ADC A,A: doubles A and adds carry" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{0x8F});
@@ -5840,7 +6450,8 @@ test "0x8F ADC A,A: doubles A and adds carry" {
 }
 
 test "0x8F ADC A,A: carry included in C flag check" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x80 + 0x80 + carry=1 = 0x101 -> C set
     h.setA(0x80);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -5864,7 +6475,8 @@ test "0x8F ADC A,A: carry included in C flag check" {
 // ---------------------------------------------------------------------------
 
 test "0x90 SUB A,B: subtracts B from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x30);
     h.setB(0x10);
     h.load(&.{0x90});
@@ -5873,7 +6485,8 @@ test "0x90 SUB A,B: subtracts B from A" {
 }
 
 test "0x90 SUB A,B: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setB(0x10);
     h.load(&.{0x90});
@@ -5882,7 +6495,8 @@ test "0x90 SUB A,B: sets Z when result is 0x00" {
 }
 
 test "0x90 SUB A,B: clears Z when result is non-zero" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 7);
     h.setA(0x10);
     h.setB(0x01);
@@ -5892,7 +6506,8 @@ test "0x90 SUB A,B: clears Z when result is non-zero" {
 }
 
 test "0x90 SUB A,B: always sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 6));
     h.setA(0x10);
     h.setB(0x01);
@@ -5902,7 +6517,8 @@ test "0x90 SUB A,B: always sets N flag" {
 }
 
 test "0x90 SUB A,B: sets H on borrow from bit 4" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setB(0x01); // lower nibble: 0x0 < 0x1 -> borrow
     h.load(&.{0x90});
@@ -5911,7 +6527,8 @@ test "0x90 SUB A,B: sets H on borrow from bit 4" {
 }
 
 test "0x90 SUB A,B: clears H when no borrow from bit 4" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 5);
     h.setA(0x0F);
     h.setB(0x01); // lower nibble: 0xF >= 0x1 -> no borrow
@@ -5921,7 +6538,8 @@ test "0x90 SUB A,B: clears H when no borrow from bit 4" {
 }
 
 test "0x90 SUB A,B: sets C when A < B (borrow)" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.setB(0x01);
     h.load(&.{0x90});
@@ -5930,7 +6548,8 @@ test "0x90 SUB A,B: sets C when A < B (borrow)" {
 }
 
 test "0x90 SUB A,B: clears C when A >= B" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.setA(0x10);
     h.setB(0x01);
@@ -5940,7 +6559,8 @@ test "0x90 SUB A,B: clears C when A >= B" {
 }
 
 test "0x90 SUB A,B: wraps result on underflow" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x00);
     h.setB(0x01);
     h.load(&.{0x90});
@@ -5949,7 +6569,8 @@ test "0x90 SUB A,B: wraps result on underflow" {
 }
 
 test "0x90 SUB A,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x90});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -5960,7 +6581,8 @@ test "0x90 SUB A,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x91 SUB A,C: subtracts C from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setC(0x10);
     h.load(&.{0x91});
@@ -5969,7 +6591,8 @@ test "0x91 SUB A,C: subtracts C from A" {
 }
 
 test "0x92 SUB A,D: subtracts D from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setD(0x10);
     h.load(&.{0x92});
@@ -5978,7 +6601,8 @@ test "0x92 SUB A,D: subtracts D from A" {
 }
 
 test "0x93 SUB A,E: subtracts E from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setE(0x10);
     h.load(&.{0x93});
@@ -5987,7 +6611,8 @@ test "0x93 SUB A,E: subtracts E from A" {
 }
 
 test "0x94 SUB A,H: subtracts H from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setH(0x10);
     h.load(&.{0x94});
@@ -5996,7 +6621,8 @@ test "0x94 SUB A,H: subtracts H from A" {
 }
 
 test "0x95 SUB A,L: subtracts L from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setL(0x10);
     h.load(&.{0x95});
@@ -6009,7 +6635,8 @@ test "0x95 SUB A,L: subtracts L from A" {
 // ---------------------------------------------------------------------------
 
 test "0x96 SUB A,(HL): subtracts byte at address in HL from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
@@ -6019,7 +6646,8 @@ test "0x96 SUB A,(HL): subtracts byte at address in HL from A" {
 }
 
 test "0x96 SUB A,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x96});
@@ -6032,7 +6660,8 @@ test "0x96 SUB A,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x97 SUB A,A: result is always 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.load(&.{0x97});
     _ = try h.step();
@@ -6040,7 +6669,8 @@ test "0x97 SUB A,A: result is always 0x00" {
 }
 
 test "0x97 SUB A,A: always sets Z" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.load(&.{0x97});
     _ = try h.step();
@@ -6048,7 +6678,8 @@ test "0x97 SUB A,A: always sets Z" {
 }
 
 test "0x97 SUB A,A: never sets C" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.load(&.{0x97});
     _ = try h.step();
@@ -6060,7 +6691,8 @@ test "0x97 SUB A,A: never sets C" {
 // ---------------------------------------------------------------------------
 
 test "0x98 SBC A,B: subtracts B and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x30);
     h.setB(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4); // set C
@@ -6070,7 +6702,8 @@ test "0x98 SBC A,B: subtracts B and carry from A" {
 }
 
 test "0x98 SBC A,B: subtracts B only when carry is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x30);
     h.setB(0x10);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
@@ -6080,7 +6713,8 @@ test "0x98 SBC A,B: subtracts B only when carry is clear" {
 }
 
 test "0x98 SBC A,B: sets Z when result is 0x00" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x10 - 0x0F - carry=1 = 0x00
     h.setA(0x10);
     h.setB(0x0F);
@@ -6091,7 +6725,8 @@ test "0x98 SBC A,B: sets Z when result is 0x00" {
 }
 
 test "0x98 SBC A,B: sets N flag" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x10);
     h.setB(0x01);
     h.load(&.{0x98});
@@ -6100,7 +6735,8 @@ test "0x98 SBC A,B: sets N flag" {
 }
 
 test "0x98 SBC A,B: sets H when carry tips over bit 4 threshold" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // lower nibble: 0x0 < 0x0 + carry=1 -> borrow
     h.setA(0x10);
     h.setB(0x00);
@@ -6111,7 +6747,8 @@ test "0x98 SBC A,B: sets H when carry tips over bit 4 threshold" {
 }
 
 test "0x98 SBC A,B: sets C when carry tips over borrow threshold" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     // 0x00 - 0x00 - carry=1 -> borrow
     h.setA(0x00);
     h.setB(0x00);
@@ -6122,7 +6759,8 @@ test "0x98 SBC A,B: sets C when carry tips over borrow threshold" {
 }
 
 test "0x98 SBC A,B: consumes 4 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.load(&.{0x98});
     const cycles = try h.step();
     try std.testing.expectEqual(@as(u8, 4), cycles);
@@ -6133,7 +6771,8 @@ test "0x98 SBC A,B: consumes 4 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x99 SBC A,C: subtracts C and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setC(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -6143,7 +6782,8 @@ test "0x99 SBC A,C: subtracts C and carry from A" {
 }
 
 test "0x9A SBC A,D: subtracts D and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setD(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -6153,7 +6793,8 @@ test "0x9A SBC A,D: subtracts D and carry from A" {
 }
 
 test "0x9B SBC A,E: subtracts E and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setE(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -6163,7 +6804,8 @@ test "0x9B SBC A,E: subtracts E and carry from A" {
 }
 
 test "0x9C SBC A,H: subtracts H and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setH(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -6173,7 +6815,8 @@ test "0x9C SBC A,H: subtracts H and carry from A" {
 }
 
 test "0x9D SBC A,L: subtracts L and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setL(0x10);
     h.cpu.registers.af.parts.f |= (1 << 4);
@@ -6187,7 +6830,8 @@ test "0x9D SBC A,L: subtracts L and carry from A" {
 // ---------------------------------------------------------------------------
 
 test "0x9E SBC A,(HL): subtracts byte at address in HL and carry from A" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x20);
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x10);
@@ -6198,7 +6842,8 @@ test "0x9E SBC A,(HL): subtracts byte at address in HL and carry from A" {
 }
 
 test "0x9E SBC A,(HL): consumes 8 T-cycles" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setHL(0xC000);
     h.writeMem(0xC000, 0x00);
     h.load(&.{0x9E});
@@ -6211,7 +6856,8 @@ test "0x9E SBC A,(HL): consumes 8 T-cycles" {
 // ---------------------------------------------------------------------------
 
 test "0x9F SBC A,A: result is 0x00 when carry is clear" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.cpu.registers.af.parts.f &= ~@as(u8, (1 << 4));
     h.load(&.{0x9F});
@@ -6220,7 +6866,8 @@ test "0x9F SBC A,A: result is 0x00 when carry is clear" {
 }
 
 test "0x9F SBC A,A: result is 0xFF when carry is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{0x9F});
@@ -6230,7 +6877,8 @@ test "0x9F SBC A,A: result is 0xFF when carry is set" {
 }
 
 test "0x9F SBC A,A: sets C when carry is set" {
-    var h = Harness.init();
+    var h: Harness = undefined;
+    h.init();
     h.setA(0x42);
     h.cpu.registers.af.parts.f |= (1 << 4);
     h.load(&.{0x9F});

@@ -17,7 +17,7 @@ pub const Gameboy = struct {
         };
     }
 
-    pub fn loadCartridge(self: *Gameboy, cartridge: *const Cartridge) void {
+    pub fn loadCartridge(self: *Gameboy, cartridge: ?*Cartridge) void {
         self.bus.loadCartridge(cartridge);
     }
 

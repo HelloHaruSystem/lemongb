@@ -15,6 +15,7 @@ pub const Bus = struct {
     // 0xFF80 - 0xFFFE: High RAM
     // 0xFFFF:          Interrupt Enable Register (IE)
     memory: [0xFFFF + 1]u8,
+    cartridge: ?*Cartridge = null,
 
     pub fn init() Bus {
         return Bus{
@@ -25,11 +26,12 @@ pub const Bus = struct {
     pub fn read(self: *Bus, address: u16) u8 {
         // for now just return the data at the location
         // in the future handle the regions differently
+
         switch (address) {
-            0x0000...0x3FFF => return self.memory[address],
-            0x4000...0x7FFF => return self.memory[address],
+            0x0000...0x3FFF => return self.readCartridge(address),
+            0x4000...0x7FFF => return self.readCartridge(address),
             0x8000...0x9FFF => return self.memory[address],
-            0xA000...0xBFFF => return self.memory[address],
+            0xA000...0xBFFF => return self.readCartridge(address),
             0xC000...0xCFFF => return self.memory[address],
             0xD000...0xDFFF => return self.memory[address],
             0xE000...0xFDFF => return self.memory[address - 0x2000], // echo address subtracting 0x2000 maps it to the corresponding work ram adress
@@ -42,22 +44,29 @@ pub const Bus = struct {
     }
 
     pub fn write(self: *Bus, address: u16, value: u8) void {
-        // simple for now
-        // rom bank 00 and bank 01 is read only
         switch (address) {
-            0x0000...0x7FFF => {}, // rom bank 00 and bank 01 is read only
+            0x0000...0x7FFF => self.writeCartridge(address, value), // write to bank 00 and 01 since it is needed for bank switching
+            0xA000...0xBFFF => self.writeCartridge(address, value), // write to external cartridge ram if no avaiable cartridge will discard the write
             0xE000...0xFDFF => self.memory[address - 0x2000] = value, // echo address mirrors work ram so we write to the corresponding work ram address
             0xFEA0...0xFEFF => {}, // not usable region undefined/weird behavior on real hardware
             else => self.memory[address] = value,
         }
     }
 
-    // very simple as of now since the only supported catridges are rom only
-    // therefor it only loads into bank 00 and bank 01
-    pub fn loadCartridge(self: *Bus, cartridge: *const Cartridge) void {
-        // load into bank 00 0x0000-0x3FFF
-        @memcpy(self.memory[0x0000..0x4000], cartridge.rom_data[0x0000..0x4000]);
-        // load into bank 01 0x4000-0x7FFF
-        @memcpy(self.memory[0x4000..0x8000], cartridge.rom_data[0x4000..0x8000]);
+    pub fn loadCartridge(self: *Bus, cartridge: ?*Cartridge) void {
+        self.cartridge = cartridge;
+    }
+
+    // helper functions
+    fn readCartridge(self: *Bus, address: u16) u8 {
+        if (self.cartridge) |cart| {
+            return cart.read(address);
+        } else return 0xFF;
+    }
+
+    fn writeCartridge(self: *Bus, address: u16, value: u8) void {
+        if (self.cartridge) |cart| {
+            cart.write(address, value);
+        }
     }
 };
