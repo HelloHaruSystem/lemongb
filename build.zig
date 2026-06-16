@@ -36,6 +36,13 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    const cartrdige_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/core/cartridge_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
 
     // test for the executable
     const exe_tests = b.addTest(.{
@@ -43,11 +50,13 @@ pub fn build(b: *std.Build) void {
     });
 
     const run_cpu_tests = b.addRunArtifact(cpu_tests);
+    const run_cartridge_tests = b.addRunArtifact(cartrdige_tests);
 
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
     // test step
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_cpu_tests.step);
+    test_step.dependOn(&run_cartridge_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 }
