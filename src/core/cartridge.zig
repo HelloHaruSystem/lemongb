@@ -43,10 +43,8 @@ pub const Cartridge = struct {
 
     pub fn write(self: *Cartridge, address: u16, value: u8) void {
         switch (self.cartridge_type) {
-            .rom_only => {
-                // throw away parameter while other types are not implemented
-                _ = .{ address, value };
-            },
+            .rom_only => {},
+            .mbc1 => |*state| state.*.write(address, value),
         }
     }
 
@@ -92,5 +90,19 @@ const Mbc1State = struct {
             .ram_enabled = false,
             .banking_mode = 0,
         };
+    }
+
+    // handle write
+    pub fn write(self: *Mbc1State, address: u16, value: u8) void {
+        switch (address) {
+            0x0000...0x1FFF => { // ram enable/disable (write only)
+                if ((value & 0x0F) == 0xA) self.ram_enabled = true else self.ram_enabled = false;
+            },
+            0x2000...0x3FFF => { // ROM Bank number (write only)
+                const bank = value & 0x1F;
+                self.rom_bank = if (bank == 0) 1 else bank;
+            },
+            else => {},
+        }
     }
 };
