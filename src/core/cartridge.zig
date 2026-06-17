@@ -35,9 +35,8 @@ pub const Cartridge = struct {
 
     pub fn read(self: *Cartridge, address: u16) u8 {
         switch (self.cartridge_type) {
-            .rom_only => {
-                if (address <= 0x7FFF) return self.rom_data[address] else return 0xFF;
-            },
+            .rom_only => if (address <= 0x7FFF) return self.rom_data[address] else return 0xFF,
+            .mbc1 => |state| return state.read(self.rom_data, address),
         }
     }
 
@@ -115,11 +114,40 @@ const Mbc1State = struct {
                     const idx = @as(usize, address - 0xA000);
                     self.ram_data[idx] = value;
                 } else {
-                    const idx = (@as(usize, self.ram_bank) * 0x2000) + (address - 0xA000);
+                    const idx = (@as(usize, self.ram_bank) * 0x2000) + (@as(usize, address - 0xA000));
                     self.ram_data[idx] = value;
                 }
             },
             else => {},
+        }
+    }
+
+    // handle read
+    pub fn read(self: *const Mbc1State, rom_data: []u8, address: u16) u8 {
+        switch (address) {
+            0x0000...0x3FFF => { // Rom bank  x0
+                if (self.banking_mode == 0) return rom_data[@as(usize, address)];
+
+                const idx = (@as(usize, self.ram_bank) * 0x2000) | @as(usize, address);
+                return rom_data[idx];
+            },
+            0x4000...0x7FFF => { // rom bank 01-7F
+                const bank = @as(usize, (self.ram_bank << 5) | self.rom_bank);
+                const idx = (bank * 0x2000) + (@as(usize, address - 0x4000));
+                return rom_data[idx];
+            },
+            0xA000...0xBFFF => { // ram bank 00-03 (if any)
+                if (!self.ram_enabled) return 0xFF;
+
+                if (self.banking_mode == 0) {
+                    const idx = @as(usize, address - 0xA000);
+                    return self.ram_data[idx];
+                } else {
+                    const idx = (@as(usize, self.ram_bank) * 0x2000) + (@as(usize, address - 0xA000));
+                    return self.ram_data[idx];
+                }
+            },
+            else => return 0xFF,
         }
     }
 };
