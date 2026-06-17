@@ -74,7 +74,7 @@ pub const CartridgeType = union(enum) {
 };
 
 // MBC Structs
-const Mbc1State = struct {
+pub const Mbc1State = struct {
     rom_bank: u8,
     ram_bank: u8,
     ram_data: []u8,
