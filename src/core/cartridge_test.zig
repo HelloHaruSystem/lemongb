@@ -96,3 +96,58 @@ test "Bus delegates external RAM access to the cartridge" {
 
     try testing.expectEqual(@as(u8, 0x77), bus.read(0xA000));
 }
+
+// ---------------------------------------------------------------------------
+// AI generated!
+// MBC1 ROM bank switching
+// ---------------------------------------------------------------------------
+
+test "fixed ROM window reads from bank 0 in mode 0" {
+    var rom = [_]u8{0} ** 0x8000;
+    var ram = [_]u8{0} ** 0x2000;
+    rom[0x0100] = 0xAA;
+    var cart = makeMbc1(&rom, &ram);
+
+    try testing.expectEqual(@as(u8, 0xAA), cart.read(0x0100));
+}
+
+test "switchable ROM window defaults to bank 1" {
+    var rom = [_]u8{0} ** 0x8000;
+    var ram = [_]u8{0} ** 0x2000;
+    rom[0x4000] = 0xBB; // first byte of bank 1 in rom_data
+    var cart = makeMbc1(&rom, &ram);
+
+    try testing.expectEqual(@as(u8, 0xBB), cart.read(0x4000));
+}
+
+test "writing to ROM bank register switches active bank" {
+    var rom = [_]u8{0} ** (3 * 0x4000);
+    var ram = [_]u8{0} ** 0x2000;
+    rom[0x4000] = 0xBB; // bank 1, offset 0
+    rom[0x8000] = 0xCC; // bank 2, offset 0
+    var cart = makeMbc1(&rom, &ram);
+
+    try testing.expectEqual(@as(u8, 0xBB), cart.read(0x4000)); // default bank 1
+    cart.write(0x2000, 0x02);
+    try testing.expectEqual(@as(u8, 0xCC), cart.read(0x4000)); // now bank 2
+}
+
+test "writing 0 to ROM bank register selects bank 1" {
+    var rom = [_]u8{0} ** 0x8000;
+    var ram = [_]u8{0} ** 0x2000;
+    rom[0x4000] = 0xDD; // bank 1, offset 0
+    var cart = makeMbc1(&rom, &ram);
+
+    cart.write(0x2000, 0x00); // 0 should remap to 1
+    try testing.expectEqual(@as(u8, 0xDD), cart.read(0x4000));
+}
+
+test "fixed ROM window unaffected by bank switch in mode 0" {
+    var rom = [_]u8{0} ** (3 * 0x4000);
+    var ram = [_]u8{0} ** 0x2000;
+    rom[0x0100] = 0xAA;
+    var cart = makeMbc1(&rom, &ram);
+
+    cart.write(0x2000, 0x02); // switch to bank 2
+    try testing.expectEqual(@as(u8, 0xAA), cart.read(0x0100)); // fixed window still bank 0
+}
