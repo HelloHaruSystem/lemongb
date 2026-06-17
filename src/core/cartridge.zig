@@ -128,12 +128,12 @@ pub const Mbc1State = struct {
             0x0000...0x3FFF => { // Rom bank  x0
                 if (self.banking_mode == 0) return rom_data[@as(usize, address)];
 
-                const idx = (@as(usize, self.ram_bank) * 0x2000) | @as(usize, address);
+                const idx = (@as(usize, self.ram_bank) * 0x4000) | @as(usize, address);
                 return rom_data[idx];
             },
             0x4000...0x7FFF => { // rom bank 01-7F
                 const bank = @as(usize, (self.ram_bank << 5) | self.rom_bank);
-                const idx = (bank * 0x2000) + (@as(usize, address - 0x4000));
+                const idx = (bank * 0x4000) + (@as(usize, address - 0x4000));
                 return rom_data[idx];
             },
             0xA000...0xBFFF => { // ram bank 00-03 (if any)
@@ -143,7 +143,7 @@ pub const Mbc1State = struct {
                     const idx = @as(usize, address - 0xA000);
                     return self.ram_data[idx];
                 } else {
-                    const idx = (@as(usize, self.ram_bank) * 0x2000) + (@as(usize, address - 0xA000));
+                    const idx = (@as(usize, self.ram_bank) * 0x4000) + (@as(usize, address - 0xA000));
                     return self.ram_data[idx];
                 }
             },
