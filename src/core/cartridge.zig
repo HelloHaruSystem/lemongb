@@ -95,12 +95,29 @@ const Mbc1State = struct {
     // handle write
     pub fn write(self: *Mbc1State, address: u16, value: u8) void {
         switch (address) {
-            0x0000...0x1FFF => { // ram enable/disable (write only)
+            0x0000...0x1FFF => { // ram enable/disable
                 if ((value & 0x0F) == 0xA) self.ram_enabled = true else self.ram_enabled = false;
             },
-            0x2000...0x3FFF => { // ROM Bank number (write only)
+            0x2000...0x3FFF => { // ROM Bank number
                 const bank = value & 0x1F;
                 self.rom_bank = if (bank == 0) 1 else bank;
+            },
+            0x4000...0x5FFF => { // Ram bank number or upper bits of ROM bank number
+                self.ram_bank = value & 0x03;
+            },
+            0x6000...0x7FFF => { // Banking mode select
+                self.banking_mode = @truncate(value & 0x01);
+            },
+            0xA000...0xBFFF => { // actual ram space
+                if (!self.ram_enabled) return;
+
+                if (self.banking_mode == 0) {
+                    const idx = @as(usize, address - 0xA000);
+                    self.ram_data[idx] = value;
+                } else {
+                    const idx = (@as(usize, self.ram_bank) * 0x2000) + (address - 0xA000);
+                    self.ram_data[idx] = value;
+                }
             },
             else => {},
         }
