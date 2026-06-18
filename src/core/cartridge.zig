@@ -143,7 +143,7 @@ pub const Mbc1State = struct {
                     const idx = @as(usize, address - 0xA000);
                     return self.ram_data[idx];
                 } else {
-                    const idx = (@as(usize, self.ram_bank) * 0x4000) + (@as(usize, address - 0xA000));
+                    const idx = (@as(usize, self.ram_bank) * 0x2000) + (@as(usize, address - 0xA000));
                     return self.ram_data[idx];
                 }
             },
