@@ -128,7 +128,7 @@ pub const Mbc1State = struct {
             0x0000...0x3FFF => { // Rom bank  x0
                 if (self.banking_mode == 0) return rom_data[@as(usize, address)];
 
-                const idx = (@as(usize, self.ram_bank) * 0x4000) | @as(usize, address);
+                const idx = (@as(usize, (self.ram_bank << 5)) * 0x4000) | @as(usize, address);
                 return rom_data[idx];
             },
             0x4000...0x7FFF => { // rom bank 01-7F
